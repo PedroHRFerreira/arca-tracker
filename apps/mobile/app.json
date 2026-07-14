@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "ARCA Tracker",
+    "slug": "arca-tracker",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "arcatracker",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pedro.arcatracker",
+      "infoPlist": {
+        "UIBackgroundModes": ["processing"],
+        "BGTaskSchedulerPermittedIdentifiers": ["com.expo.modules.backgroundtask.processing"]
+      }
+    },
+    "android": {
+      "package": "com.pedro.arcatracker",
+      "adaptiveIcon": {
+        "backgroundColor": "#F5F7FB"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-notifications",
+      "expo-sqlite",
+      "expo-background-task"
+    ],
+    "experiments": { "typedRoutes": true },
+    "extra": {
+      "router": { "origin": false }
+    }
+  }
+}
