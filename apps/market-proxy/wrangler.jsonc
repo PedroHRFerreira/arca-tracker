@@ -8,7 +8,7 @@
     "TREASURY_CSV_URL": "https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv"
   },
   "kv_namespaces": [
-    { "binding": "MARKET_CACHE", "id": "REPLACE_WITH_KV_ID", "preview_id": "REPLACE_WITH_PREVIEW_KV_ID" }
+    { "binding": "MARKET_CACHE", "id": "57d8bf3339764b879dada2f2bd042bd1" }
   ],
   "triggers": { "crons": ["17 10 * * *"] }
 }

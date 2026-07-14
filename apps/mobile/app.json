@@ -2,6 +2,7 @@
   "expo": {
     "name": "ARCA Tracker",
     "slug": "arca-tracker",
+    "owner": "pedrohrferreira",
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "arcatracker",
@@ -11,8 +12,12 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.pedro.arcatracker",
       "infoPlist": {
-        "UIBackgroundModes": ["processing"],
-        "BGTaskSchedulerPermittedIdentifiers": ["com.expo.modules.backgroundtask.processing"]
+        "UIBackgroundModes": [
+          "processing"
+        ],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.expo.modules.backgroundtask.processing"
+        ]
       }
     },
     "android": {
@@ -28,9 +33,16 @@
       "expo-sqlite",
       "expo-background-task"
     ],
-    "experiments": { "typedRoutes": true },
+    "experiments": {
+      "typedRoutes": true
+    },
     "extra": {
-      "router": { "origin": false }
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "8798be59-54af-44a9-af90-3488d6ace355"
+      }
     }
   }
 }
