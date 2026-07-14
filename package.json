@@ -1,0 +1,17 @@
+{
+  "name": "arca-tracker",
+  "private": true,
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "dev": "pnpm --filter @arca/mobile start",
+    "dev:proxy": "pnpm --filter @arca/market-proxy dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "check": "pnpm typecheck && pnpm test",
+    "rods": "node /home/pedro/Documentos/code/ctx/bin/rods"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
