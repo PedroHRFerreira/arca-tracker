@@ -7,7 +7,6 @@
     "orientation": "portrait",
     "scheme": "arcatracker",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pedro.arcatracker",
