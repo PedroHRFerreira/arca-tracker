@@ -48,7 +48,7 @@ A identidade do Worker e o KV estão em `apps/market-proxy/wrangler.jsonc`. Os s
 
 ```bash
 pnpm --filter @arca/market-proxy exec wrangler deploy --dry-run
-pnpm --filter @arca/market-proxy deploy
+pnpm --filter @arca/market-proxy run deploy
 ```
 
 Depois de atualizar, confira `/health`, uma cotação e os grupos do catálogo com o token já configurado, sem exibir credenciais nos logs.
