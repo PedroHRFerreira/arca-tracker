@@ -1,27 +1,27 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const arcaClasses = [
-  'BRAZIL_STOCKS',
-  'REAL_ESTATE',
-  'CASH_FIXED_INCOME',
-  'INTERNATIONAL',
+  "BRAZIL_STOCKS",
+  "REAL_ESTATE",
+  "CASH_FIXED_INCOME",
+  "INTERNATIONAL",
 ] as const;
 
 export const ArcaClassSchema = z.enum(arcaClasses);
 export type ArcaClass = z.infer<typeof ArcaClassSchema>;
 
 export const ARCA_LABELS: Record<ArcaClass, string> = {
-  BRAZIL_STOCKS: 'Ações Brasil',
-  REAL_ESTATE: 'Real Estate (FIIs)',
-  CASH_FIXED_INCOME: 'Caixa e Renda Fixa',
-  INTERNATIONAL: 'Bolsas Internacionais',
+  BRAZIL_STOCKS: "Ações Brasil",
+  REAL_ESTATE: "Imóveis (fundos imobiliários)",
+  CASH_FIXED_INCOME: "Caixa e renda fixa",
+  INTERNATIONAL: "Investimentos no exterior",
 };
 
 export const ARCA_SHORT_LABELS: Record<ArcaClass, string> = {
-  BRAZIL_STOCKS: 'Ações',
-  REAL_ESTATE: 'Real Estate',
-  CASH_FIXED_INCOME: 'Caixa',
-  INTERNATIONAL: 'Internacional',
+  BRAZIL_STOCKS: "Ações",
+  REAL_ESTATE: "Imóveis",
+  CASH_FIXED_INCOME: "Renda fixa",
+  INTERNATIONAL: "Internacional",
 };
 
 export interface PositionInput {

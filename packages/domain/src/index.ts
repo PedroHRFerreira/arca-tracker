@@ -3,3 +3,5 @@ export * from './portfolio';
 export * from './projection';
 export * from './rebalance';
 export * from './history';
+export * from './planning';
+export * from './catalog';

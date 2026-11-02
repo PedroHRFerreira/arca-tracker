@@ -1,20 +1,20 @@
 export const colors = {
-  background: "#F5F7FB",
+  background: "#F5F7F6",
   surface: "#FFFFFF",
-  ink: "#111827",
-  muted: "#6B7280",
-  border: "#E5E7EB",
-  primary: "#083BCE",
+  ink: "#152D25",
+  muted: "#68786F",
+  border: "#E5EBE7",
+  primary: "#104C3B",
   danger: "#DC2626",
   dangerSoft: "#FEE2E2",
   success: "#059669",
   successSoft: "#D1FAE5",
-  actions: "#1057D8",
-  realEstate: "#22C55E",
-  cash: "#EF4444",
-  international: "#8B5CF6",
+  actions: "#376CA0",
+  realEstate: "#A46E30",
+  cash: "#397959",
+  international: "#81719F",
   warning: "#F59E0B",
-  navy: "#111827",
+  navy: "#104C3B",
 } as const;
 
 export const arcaColors = {
@@ -33,3 +33,5 @@ export const money = (value: string | number) =>
 
 export const pct = (value: string | number) =>
   `${Number(value) >= 0 ? "+" : ""}${Number(value).toFixed(2)}%`;
+
+export const layout = { maxWidth: 520, tabBottomSpace: 140 } as const;

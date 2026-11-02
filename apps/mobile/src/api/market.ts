@@ -1,4 +1,6 @@
+import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import { ScreeningMetadataSchema } from "@arca/domain";
 import { z } from "zod";
 
 const QuoteSchema = z.object({
@@ -10,6 +12,7 @@ const QuoteSchema = z.object({
   source: z.literal("BRAPI"),
 });
 const ScreeningSuggestionSchema = z.object({
+  ...ScreeningMetadataSchema.partial().shape,
   symbol: z.string(),
   name: z.string(),
   criterion: z.string(),
@@ -22,12 +25,18 @@ const ScreeningResponseSchema = z.object({
 const baseUrl = process.env.EXPO_PUBLIC_MARKET_PROXY_URL;
 
 export async function setProxyToken(token: string) {
+  if (Platform.OS === "web") {
+    sessionStorage.setItem("arca_proxy_token", token);
+    return;
+  }
   await SecureStore.setItemAsync("arca_proxy_token", token);
 }
 
 export async function getProxyToken() {
   return (
-    (await SecureStore.getItemAsync("arca_proxy_token")) ??
+    (Platform.OS === "web"
+      ? sessionStorage.getItem("arca_proxy_token")
+      : await SecureStore.getItemAsync("arca_proxy_token")) ??
     process.env.EXPO_PUBLIC_ARCA_PROXY_TOKEN ??
     null
   );

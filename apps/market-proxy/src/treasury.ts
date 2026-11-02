@@ -63,7 +63,7 @@ export function parseLatestTreasuryCsv(csv: string): TreasuryBond[] {
       sellPrice: normalize(row[indexes.sellPrice]),
       capturedAt: latestDate,
     }))
-    .sort((a, b) => a.maturityDate.localeCompare(b.maturityDate));
+    .sort((a, b) => dateKey(a.maturityDate).localeCompare(dateKey(b.maturityDate)));
 }
 
 export async function refreshTreasury(env: Env): Promise<TreasuryBond[]> {

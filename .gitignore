@@ -19,3 +19,8 @@ apps/mobile/.expo/
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Android distribution and private signing credentials
+credentials.json
+*.apk
+*.aab

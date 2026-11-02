@@ -1,0 +1,160 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultPlanningProfile } from "@arca/domain";
+
+const state = vi.hoisted(() => ({
+  granted: true,
+  records: [] as Array<{
+    identifier: string;
+    content: { title: string; data?: Record<string, unknown> };
+    trigger: unknown;
+  }>,
+  settings: new Map<string, string>(),
+  platform: { OS: "android" },
+}));
+vi.mock("react-native", () => ({ Platform: state.platform }));
+vi.mock("expo-constants", () => ({
+  default: { executionEnvironment: "standalone" },
+  ExecutionEnvironment: { StoreClient: "storeClient" },
+}));
+vi.mock("@/db/database", () => ({
+  getSetting: async (key: string) => state.settings.get(key) ?? null,
+  setSetting: async (key: string, value: string) => {
+    state.settings.set(key, value);
+  },
+}));
+vi.mock("expo-notifications", () => ({
+  getPermissionsAsync: vi.fn(async () => ({ granted: state.granted })),
+  requestPermissionsAsync: vi.fn(async () => ({ granted: state.granted })),
+  getAllScheduledNotificationsAsync: vi.fn(async () => [...state.records]),
+  setNotificationChannelAsync: vi.fn(async () => {}),
+  AndroidImportance: { DEFAULT: 3 },
+  SchedulableTriggerInputTypes: {
+    MONTHLY: "monthly",
+    WEEKLY: "weekly",
+    DATE: "date",
+  },
+  cancelScheduledNotificationAsync: vi.fn(async (id: string) => {
+    state.records = state.records.filter((record) => record.identifier !== id);
+  }),
+  scheduleNotificationAsync: vi.fn(
+    async (record: (typeof state.records)[number]) => {
+      state.records.push(record);
+      return record.identifier;
+    },
+  ),
+}));
+import {
+  configureReminders,
+  getReminderPreferences,
+} from "../src/notifications";
+import * as N from "expo-notifications";
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 0, 1, 10));
+  vi.clearAllMocks();
+  state.records = [];
+  state.settings.clear();
+  state.granted = true;
+  state.platform.OS = "android";
+});
+
+describe("independent local reminders", () => {
+  it("reconciles idempotently and leaves unrelated notifications untouched", async () => {
+    state.records.push({
+      identifier: "other",
+      content: { title: "Outro recurso" },
+      trigger: null,
+    });
+    const prefs = { contribution: false, review: true, history: true };
+    await configureReminders(prefs);
+    await configureReminders(prefs);
+    expect(N.scheduleNotificationAsync).toHaveBeenCalledTimes(2);
+    await configureReminders({ ...prefs, review: false });
+    expect(state.records.map((record) => record.identifier).sort()).toEqual([
+      "arca-history",
+      "other",
+    ]);
+  });
+  it("keeps a denied permission non-blocking and never requests it during background reconciliation", async () => {
+    state.granted = false;
+    expect(
+      await configureReminders(
+        { contribution: true, review: true, history: true },
+        defaultPlanningProfile(),
+        false,
+      ),
+    ).toEqual({ contribution: false, review: false, history: false });
+    expect(N.requestPermissionsAsync).not.toHaveBeenCalled();
+    expect(state.records).toHaveLength(0);
+  });
+  it("schedules clamped monthly dates without changing their original anchor", async () => {
+    const profile = {
+      ...defaultPlanningProfile(),
+      firstContributionDate: "2026-01-31",
+    };
+    await configureReminders(
+      { contribution: true, review: false, history: false },
+      profile,
+    );
+    expect(
+      state.records.slice(0, 3).map((record) => record.identifier),
+    ).toEqual([
+      "arca-contribution-2026-01-31",
+      "arca-contribution-2026-02-28",
+      "arca-contribution-2026-03-31",
+    ]);
+    expect(
+      state.records.every(
+        (record) => (record.trigger as { date: Date }).date.getHours() === 9,
+      ),
+    ).toBe(true);
+  });
+  it("adopts legacy settings and removes only recognized legacy reminders", async () => {
+    state.settings.set("notifications_enabled", "true");
+    expect(await getReminderPreferences()).toEqual({
+      contribution: false,
+      review: true,
+      history: true,
+    });
+    state.records = [
+      {
+        identifier: "legacy",
+        content: { title: "Atualizar histórico" },
+        trigger: null,
+      },
+      { identifier: "other", content: { title: "Outra coisa" }, trigger: null },
+    ];
+    await configureReminders({
+      contribution: false,
+      review: true,
+      history: true,
+    });
+    expect(state.records.map((record) => record.identifier).sort()).toEqual([
+      "arca-history",
+      "arca-review",
+      "other",
+    ]);
+  });
+  it("refreshes the finite contribution window and caps the native pending queue", async () => {
+    const profile = {
+      ...defaultPlanningProfile(),
+      firstContributionDate: "2026-01-01",
+      frequency: "WEEKLY" as const,
+    };
+    const prefs = { contribution: true, review: true, history: true };
+    await configureReminders(prefs, profile);
+    expect(state.records).toHaveLength(26);
+    vi.setSystemTime(new Date(2026, 3, 1, 10));
+    await configureReminders(prefs, profile);
+    expect(state.records).toHaveLength(26);
+    expect(
+      state.records.some(
+        (record) => record.identifier === "arca-contribution-2026-01-08",
+      ),
+    ).toBe(false);
+    expect(
+      state.records.some((record) => record.identifier === "arca-history"),
+    ).toBe(true);
+  });
+});

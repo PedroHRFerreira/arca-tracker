@@ -3,7 +3,7 @@
     "name": "ARCA Tracker",
     "slug": "arca-tracker",
     "owner": "pedrohrferreira",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "scheme": "arcatracker",
     "userInterfaceStyle": "light",
@@ -22,7 +22,8 @@
     "android": {
       "package": "com.pedro.arcatracker",
       "adaptiveIcon": {
-        "backgroundColor": "#F5F7FB"
+        "foregroundImage": "./assets/arca-cover.png",
+        "backgroundColor": "#F7F8F2"
       }
     },
     "plugins": [
@@ -30,7 +31,16 @@
       "expo-secure-store",
       "expo-notifications",
       "expo-sqlite",
-      "expo-background-task"
+      "expo-background-task",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/arca-cover.png",
+          "imageWidth": 240,
+          "resizeMode": "contain",
+          "backgroundColor": "#F7F8F2"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -42,6 +52,10 @@
       "eas": {
         "projectId": "8798be59-54af-44a9-af90-3488d6ace355"
       }
+    },
+    "icon": "./assets/arca-cover.png",
+    "web": {
+      "favicon": "./assets/arca-cover.png"
     }
   }
 }

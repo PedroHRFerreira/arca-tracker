@@ -1,21 +1,15 @@
 import { useState } from "react";
-import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ARCA_LABELS } from "@arca/domain";
 import { Button, Card, ScreenHeader } from "@/components/ui";
 import { DonutChart } from "@/components/DonutChart";
 import { useApp, useRebalance } from "@/providers/AppProvider";
-import { arcaColors, colors, money, pct } from "@/theme";
+import { arcaColors, colors, money, layout } from "@/theme";
 import { acknowledgeLatestSnapshot } from "@/db/database";
 
 export default function Rebalance() {
-  const { portfolio, refresh } = useApp();
+  const { strategyPortfolio: portfolio, refresh } = useApp();
   const plan = useRebalance();
   const [simulating, setSimulating] = useState(false);
   const preview = simulating
@@ -25,19 +19,27 @@ export default function Rebalance() {
       }))
     : portfolio.allocations;
   async function acknowledge() {
-    await acknowledgeLatestSnapshot();
-    await refresh();
-    Alert.alert(
-      "Alerta silenciado",
-      "Uma nova cotação ou movimentação reavaliará a carteira.",
-    );
+    try {
+      await acknowledgeLatestSnapshot();
+      await refresh();
+      Alert.alert(
+        "Aviso revisado",
+        "Uma nova cotação ou movimentação reavaliará a carteira.",
+      );
+    } catch {
+      Alert.alert(
+        "Não foi possível salvar",
+        "Tente novamente. Seus investimentos foram preservados.",
+      );
+    }
   }
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.content}>
         <ScreenHeader
-          title="Rebalanceamento"
-          subtitle="Ajustes para voltar às metas"
+          back
+          title="Ajustar a distribuição"
+          subtitle="Uma simulação para revisar com calma"
         />
         <Card style={styles.total}>
           <Text style={styles.totalLabel}>Valor total a movimentar</Text>
@@ -78,15 +80,17 @@ export default function Rebalance() {
                   },
                 ]}
               >
-                {pct(item.driftPercentagePoints)} p.p.
+                {Math.abs(Number(item.driftPercentagePoints)).toFixed(1)} pontos{" "}
+                {Number(item.driftPercentagePoints) >= 0 ? "acima" : "abaixo"}{" "}
+                da meta
               </Text>
             </View>
             <View style={styles.suggestion}>
               <Text style={styles.action}>
                 {item.action === "BUY"
-                  ? "Comprar"
+                  ? "Simular compra"
                   : item.action === "SELL"
-                    ? "Realocar"
+                    ? "Simular venda"
                     : "Dentro da meta"}
               </Text>
               <Text style={styles.amount}>{money(item.amount)}</Text>
@@ -103,19 +107,20 @@ export default function Rebalance() {
           title={
             simulating
               ? "Voltar à distribuição atual"
-              : "Simular rebalanceamento"
+              : "Simular distribuição nas metas"
           }
           onPress={() => setSimulating(!simulating)}
         />
         <View style={{ height: 10 }} />
         <Button
-          title="Marcar como feito"
+          title="Já revisei este aviso"
           variant="secondary"
           onPress={acknowledge}
         />
         <Text style={styles.note}>
-          Marcar como feito não altera suas posições. Registre compras ou vendas
-          na tela Novo Aporte.
+          Esta simulação não realiza operações nem altera suas posições. A
+          reserva fica separada. Se decidir comprar ou vender na sua
+          instituição, registre a movimentação na Carteira.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -123,7 +128,7 @@ export default function Rebalance() {
 }
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 18, paddingBottom: 100 },
+  content: { padding: 18, paddingBottom: layout.tabBottomSpace },
   total: { backgroundColor: colors.navy },
   totalLabel: { color: "#CBD5E1" },
   totalValue: {

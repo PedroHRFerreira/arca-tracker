@@ -1,48 +1,31 @@
-import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
+import { FloatingTabBar } from "@/components/FloatingTabBar";
+import { useReducedMotion } from "@/motion/Motion";
 import { colors } from "@/theme";
 
-const icons = {
-  dashboard: "grid-outline",
-  assets: "wallet-outline",
-  history: "analytics-outline",
-  projection: "trending-up-outline",
-  rebalance: "swap-horizontal-outline",
-} as const;
-const labels = {
-  dashboard: "Dashboard",
-  assets: "Ativos",
-  history: "Histórico",
-  projection: "Projeção",
-  rebalance: "Rebalancear",
-} as const;
-
 export default function TabsLayout() {
+  const reduced = useReducedMotion();
   return (
     <Tabs
-      screenOptions={({ route }) => ({
+      tabBar={(props) => <FloatingTabBar {...props} />}
+      screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.muted,
-        tabBarStyle: {
-          height: 68,
-          paddingTop: 7,
-          paddingBottom: 8,
-          borderTopColor: colors.border,
+        animation: reduced ? "none" : "fade",
+        transitionSpec: {
+          animation: "timing",
+          config: { duration: reduced ? 0 : 220 },
         },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: "700" },
-        tabBarIcon: ({ color, size }) => (
-          <Ionicons
-            name={icons[route.name as keyof typeof icons] ?? "ellipse-outline"}
-            size={size}
-            color={color}
-          />
-        ),
-      })}
+        sceneStyle: { backgroundColor: colors.background },
+        tabBarStyle: { position: "absolute" },
+      }}
     >
-      {Object.entries(labels).map(([name, title]) => (
-        <Tabs.Screen key={name} name={name} options={{ title }} />
-      ))}
+      <Tabs.Screen name="dashboard" options={{ title: "Início" }} />
+      <Tabs.Screen name="plan" options={{ title: "Meu plano" }} />
+      <Tabs.Screen name="assets" options={{ title: "Carteira" }} />
+      <Tabs.Screen name="evolution" options={{ title: "Evolução" }} />
+      <Tabs.Screen name="history" options={{ href: null }} />
+      <Tabs.Screen name="projection" options={{ href: null }} />
+      <Tabs.Screen name="rebalance" options={{ href: null }} />
     </Tabs>
   );
 }

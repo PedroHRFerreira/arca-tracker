@@ -1,4 +1,4 @@
-import { ArcaClassSchema } from '@arca/domain';
+import { ArcaClassSchema, CATALOG_VERSION, getAssetCatalogMetadata } from '@arca/domain';
 import { fetchQuote, screenByLiquidity } from './brapi';
 import type { Env } from './contracts';
 import { refreshTreasury } from './treasury';
@@ -47,6 +47,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       const available = bonds ?? (await refreshTreasury(env));
       const capturedAt = new Date().toISOString();
       const items = available.slice(0, 10).map((bond) => ({
+        ...getAssetCatalogMetadata('TESOURO_SELIC'),
         arcaClass,
         symbol: `SELIC-${bond.maturityDate}`,
         name: bond.name,
@@ -59,7 +60,7 @@ async function handle(request: Request, env: Env): Promise<Response> {
       return json({ arcaClass, items });
     }
     const items = await cached(
-      `screening:${arcaClass}:top10`,
+      `screening:${CATALOG_VERSION}:${arcaClass}:top10`,
       1_800,
       () => screenByLiquidity(arcaClass, env),
       env,

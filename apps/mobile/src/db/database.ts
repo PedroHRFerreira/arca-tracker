@@ -1,5 +1,13 @@
 import {
   calculateLedger,
+  nextContributionDate,
+  getPlanTargets,
+  localDateString,
+  PlanningDraftSchema,
+  PlanningProfileSchema,
+  validatePlanningTargets,
+  type AssetBucket,
+  type PlanningProfile,
   type ArcaClass,
   type PositionInput,
   type SnapshotValue,
@@ -16,9 +24,11 @@ export interface Asset {
   arcaClass: ArcaClass;
   assetType: string;
   quoteMode: QuoteMode;
+  bucket: AssetBucket;
   active: number;
   price: string | null;
   priceCapturedAt: string | null;
+  currentValue?: string;
 }
 
 let database: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -78,8 +88,23 @@ async function performMigration(): Promise<void> {
       id TEXT PRIMARY KEY, name TEXT NOT NULL, annual_rate TEXT NOT NULL, monthly_contribution TEXT NOT NULL,
       offset_points TEXT NOT NULL, horizon_years INTEGER NOT NULL, created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS planning_profiles (
+      kind TEXT PRIMARY KEY CHECK(kind IN ('draft', 'active')), profile_json TEXT NOT NULL, updated_at TEXT NOT NULL
+    );
   `);
   await db.withTransactionAsync(async () => {
+    const assetColumns = await db.getAllAsync<{ name: string }>(
+      "PRAGMA table_info(assets)",
+    );
+    if (!assetColumns.some((column) => column.name === "bucket")) {
+      await db.execAsync(
+        "ALTER TABLE assets ADD COLUMN bucket TEXT NOT NULL DEFAULT 'LONG_TERM' CHECK(bucket IN ('LONG_TERM', 'RESERVE'))",
+      );
+    }
+    await db.runAsync(
+      "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, ?)",
+      new Date().toISOString(),
+    );
     await db.runAsync(
       "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, ?)",
       new Date().toISOString(),
@@ -105,8 +130,15 @@ async function performMigration(): Promise<void> {
     await db.runAsync(
       "INSERT OR IGNORE INTO app_settings(key, value) VALUES ('sync_frequency_minutes', '30')",
     );
+    const previousProjection = await db.getFirstAsync<{ id: number }>(
+      "SELECT id FROM projection_settings WHERE id=1",
+    );
     await db.runAsync(
-      "INSERT OR IGNORE INTO projection_settings(id, annual_rate, monthly_contribution, offset_points, horizon_years) VALUES (1, '8', '1000', '3', 20)",
+      "INSERT OR IGNORE INTO app_settings(key,value) VALUES ('projection_legacy_available',?)",
+      String(!!previousProjection),
+    );
+    await db.runAsync(
+      "INSERT OR IGNORE INTO projection_settings(id, annual_rate, monthly_contribution, offset_points, horizon_years) VALUES (1, '0', '0', '0', 20)",
     );
   });
 }
@@ -146,6 +178,7 @@ export async function getTargets(): Promise<Record<ArcaClass, string>> {
 export async function saveTargets(
   targets: Record<ArcaClass, string>,
 ): Promise<void> {
+  validatePlanningTargets(targets);
   const db = await getDatabase();
   await db.withTransactionAsync(async () => {
     for (const [arcaClass, value] of Object.entries(targets)) {
@@ -155,13 +188,87 @@ export async function saveTargets(
         arcaClass,
       );
     }
+    await db.runAsync("DELETE FROM rebalance_acknowledgements");
+    // Editing percentages turns a selected educational model into a custom plan.
+    const row = await db.getFirstAsync<{ profile_json: string }>(
+      "SELECT profile_json FROM planning_profiles WHERE kind='active'",
+    );
+    if (row) {
+      const profile = PlanningProfileSchema.parse(JSON.parse(row.profile_json));
+      const custom = PlanningProfileSchema.parse({
+        ...profile,
+        strategy: "CUSTOM",
+        targets,
+      });
+      await db.runAsync(
+        "UPDATE planning_profiles SET profile_json=?, updated_at=? WHERE kind='active'",
+        JSON.stringify(custom),
+        new Date().toISOString(),
+      );
+    }
+  });
+}
+
+export async function getPlanningDraft(): Promise<PlanningProfile | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ profile_json: string }>(
+    "SELECT profile_json FROM planning_profiles WHERE kind='draft'",
+  );
+  return row ? PlanningDraftSchema.parse(JSON.parse(row.profile_json)) : null;
+}
+
+export async function savePlanningDraft(
+  profile: PlanningProfile,
+): Promise<void> {
+  const parsed = PlanningDraftSchema.parse(profile);
+  const db = await getDatabase();
+  await db.runAsync(
+    "INSERT INTO planning_profiles(kind, profile_json, updated_at) VALUES ('draft', ?, ?) ON CONFLICT(kind) DO UPDATE SET profile_json=excluded.profile_json, updated_at=excluded.updated_at",
+    JSON.stringify(parsed),
+    new Date().toISOString(),
+  );
+}
+
+export async function getActivePlan(): Promise<PlanningProfile | null> {
+  const db = await getDatabase();
+  const row = await db.getFirstAsync<{ profile_json: string }>(
+    "SELECT profile_json FROM planning_profiles WHERE kind='active'",
+  );
+  return row ? PlanningProfileSchema.parse(JSON.parse(row.profile_json)) : null;
+}
+
+export async function activatePlan(profile: PlanningProfile): Promise<void> {
+  const parsed = PlanningProfileSchema.parse(profile);
+  const targets = getPlanTargets(parsed);
+  const db = await getDatabase();
+  await db.withTransactionAsync(async () => {
+    const now = new Date().toISOString();
+    for (const kind of ["active", "draft"]) {
+      await db.runAsync(
+        "INSERT INTO planning_profiles(kind, profile_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(kind) DO UPDATE SET profile_json=excluded.profile_json, updated_at=excluded.updated_at",
+        kind,
+        JSON.stringify(parsed),
+        now,
+      );
+    }
+    for (const [arcaClass, target] of Object.entries(targets)) {
+      await db.runAsync(
+        "INSERT INTO targets(arca_class, target_percent) VALUES (?, ?) ON CONFLICT(arca_class) DO UPDATE SET target_percent=excluded.target_percent",
+        arcaClass,
+        target,
+      );
+    }
+    await db.runAsync(
+      "INSERT INTO app_settings(key, value) VALUES ('onboarding_complete', 'true') ON CONFLICT(key) DO UPDATE SET value='true'",
+    );
+    await db.runAsync("DELETE FROM rebalance_acknowledgements");
   });
 }
 
 export async function listAssets(): Promise<Asset[]> {
   const db = await getDatabase();
   return db.getAllAsync<Asset>(`SELECT a.id, a.symbol, a.name, a.arca_class AS arcaClass, a.asset_type AS assetType,
-    a.quote_mode AS quoteMode, a.active, q.price, q.captured_at AS priceCapturedAt FROM assets a
+    a.quote_mode AS quoteMode, a.bucket, a.active, q.price, q.captured_at AS priceCapturedAt FROM assets a
     LEFT JOIN quotes q ON q.id = (SELECT id FROM quotes WHERE asset_id = a.id ORDER BY captured_at DESC LIMIT 1)
     WHERE a.active = 1 ORDER BY a.name`);
 }
@@ -170,9 +277,7 @@ export async function getAsset(assetId: string): Promise<Asset | null> {
   return (await listAssets()).find((asset) => asset.id === assetId) ?? null;
 }
 
-export async function listAssetTransactions(
-  assetId: string,
-): Promise<
+export async function listAssetTransactions(assetId: string): Promise<
   Array<{
     id: string;
     type: "BUY" | "SELL";
@@ -199,26 +304,51 @@ export async function archiveAsset(assetId: string): Promise<void> {
 }
 
 export async function createAsset(
-  input: Omit<Asset, "id" | "active" | "price" | "priceCapturedAt">,
+  input: Omit<
+    Asset,
+    "id" | "active" | "price" | "priceCapturedAt" | "bucket"
+  > & { bucket?: AssetBucket },
 ): Promise<string> {
   const db = await getDatabase();
+  if (input.bucket === "RESERVE" && input.arcaClass !== "CASH_FIXED_INCOME")
+    throw new Error("RESERVA_RENDA_FIXA");
   const id = Crypto.randomUUID();
   const now = new Date().toISOString();
   await db.runAsync(
-    "INSERT INTO assets(id, symbol, name, arca_class, asset_type, quote_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO assets(id, symbol, name, arca_class, asset_type, quote_mode, bucket, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     id,
     input.symbol.trim().toUpperCase(),
     input.name.trim(),
     input.arcaClass,
     input.assetType,
     input.quoteMode,
+    input.bucket ?? "LONG_TERM",
     now,
     now,
   );
   return id;
 }
 
-export async function addTransaction(input: {
+export async function setAssetBucket(
+  assetId: string,
+  bucket: AssetBucket,
+): Promise<void> {
+  if (bucket !== "RESERVE" && bucket !== "LONG_TERM")
+    throw new Error("DESTINO_INVALIDO");
+  const db = await getDatabase();
+  const asset = await getAsset(assetId);
+  if (!asset) throw new Error("ATIVO_NAO_ENCONTRADO");
+  if (bucket === "RESERVE" && asset.arcaClass !== "CASH_FIXED_INCOME")
+    throw new Error("RESERVA_RENDA_FIXA");
+  await db.runAsync(
+    "UPDATE assets SET bucket=?, updated_at=? WHERE id=?",
+    bucket,
+    new Date().toISOString(),
+    assetId,
+  );
+}
+
+async function addTransactionRecords(input: {
   assetId: string;
   type: "BUY" | "SELL";
   tradeDate: string;
@@ -246,28 +376,87 @@ export async function addTransaction(input: {
     },
   ]);
   const now = new Date().toISOString();
+  await db.runAsync(
+    "INSERT INTO transactions(id, asset_id, type, trade_date, quantity, unit_price, fees, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    Crypto.randomUUID(),
+    input.assetId,
+    input.type,
+    input.tradeDate,
+    input.quantity,
+    input.unitPrice,
+    input.fees ?? "0",
+    now,
+  );
+  await db.runAsync(
+    "INSERT INTO quotes(id, asset_id, price, source, captured_at, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    Crypto.randomUUID(),
+    input.assetId,
+    input.unitPrice,
+    "TRANSACTION",
+    now,
+    now,
+  );
+}
+
+export async function addTransaction(input: {
+  assetId: string;
+  type: "BUY" | "SELL";
+  tradeDate: string;
+  quantity: string;
+  unitPrice: string;
+  fees?: string;
+}): Promise<void> {
+  const db = await getDatabase();
+  await db.withTransactionAsync(() => addTransactionRecords(input));
+}
+
+export async function recordAssetMovement(input: {
+  assetId?: string;
+  asset?: Parameters<typeof createAsset>[0];
+  bucket?: AssetBucket;
+  movement: {
+    type: "BUY" | "SELL" | "BALANCE";
+    date: string;
+    quantity?: string;
+    unitPrice?: string;
+    balance?: string;
+  };
+}): Promise<string> {
+  const movement = input.movement;
+  nextContributionDate(movement.date, "MONTHLY", movement.date);
+  const positive = (value: string | undefined, allowZero = false) => {
+    const number = new Decimal(value ?? "NaN");
+    if (!number.isFinite() || (allowZero ? number.lt(0) : number.lte(0)))
+      throw new Error("VALOR_INVALIDO");
+    return number.toString();
+  };
+  const balance =
+    movement.type === "BALANCE" ? positive(movement.balance, true) : null;
+  const quantity =
+    movement.type !== "BALANCE" ? positive(movement.quantity) : null;
+  const unitPrice =
+    movement.type !== "BALANCE" ? positive(movement.unitPrice) : null;
+  const db = await getDatabase();
+  let id = input.assetId ?? "";
   await db.withTransactionAsync(async () => {
-    await db.runAsync(
-      "INSERT INTO transactions(id, asset_id, type, trade_date, quantity, unit_price, fees, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      Crypto.randomUUID(),
-      input.assetId,
-      input.type,
-      input.tradeDate,
-      input.quantity,
-      input.unitPrice,
-      input.fees ?? "0",
-      now,
-    );
-    await db.runAsync(
-      "INSERT INTO quotes(id, asset_id, price, source, captured_at, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-      Crypto.randomUUID(),
-      input.assetId,
-      input.unitPrice,
-      "TRANSACTION",
-      now,
-      now,
-    );
+    if (!id) {
+      if (!input.asset) throw new Error("ATIVO_NAO_ENCONTRADO");
+      id = await createAsset(input.asset);
+    }
+    if (!(await getAsset(id))) throw new Error("ATIVO_NAO_ENCONTRADO");
+    if (input.bucket) await setAssetBucket(id, input.bucket);
+    if (balance !== null)
+      await addBalanceAdjustment(id, movement.date, balance);
+    else
+      await addTransactionRecords({
+        assetId: id,
+        type: movement.type as "BUY" | "SELL",
+        tradeDate: movement.date,
+        quantity: quantity!,
+        unitPrice: unitPrice!,
+      });
   });
+  return id;
 }
 
 export async function addBalanceAdjustment(
@@ -352,7 +541,7 @@ export async function saveDailySnapshot(
   allocations: Array<{ arcaClass: ArcaClass; value: string }>,
 ): Promise<void> {
   const db = await getDatabase();
-  const day = new Date().toISOString().slice(0, 10);
+  const day = localDateString();
   const id = `snapshot:${day}`;
   const existing = await db.getFirstAsync<{ totalValue: string }>(
     "SELECT total_value AS totalValue FROM portfolio_snapshots WHERE id = ?",
@@ -471,6 +660,7 @@ const backupColumns = {
     "arca_class",
     "asset_type",
     "quote_mode",
+    "bucket",
     "active",
     "created_at",
     "updated_at",
@@ -514,6 +704,7 @@ const backupColumns = {
     "horizon_years",
     "created_at",
   ],
+  planning_profiles: ["kind", "profile_json", "updated_at"],
 } as const;
 
 export async function exportDatabaseJson() {
@@ -521,17 +712,18 @@ export async function exportDatabaseJson() {
   const tables: Record<string, unknown[]> = {};
   for (const name of Object.keys(backupColumns))
     tables[name] = await db.getAllAsync(`SELECT * FROM ${name}`);
-  return { version: 1, exportedAt: new Date().toISOString(), tables };
+  return { version: 2, exportedAt: new Date().toISOString(), tables };
 }
 
 export async function restoreDatabaseJson(value: unknown): Promise<void> {
   if (
     !value ||
     typeof value !== "object" ||
-    (value as { version?: unknown }).version !== 1
+    ![1, 2].includes((value as { version: number }).version)
   )
     throw new Error("BACKUP_VERSION_UNSUPPORTED");
   const tables = (value as { tables?: unknown }).tables;
+  const version = (value as { version: number }).version;
   if (!tables || typeof tables !== "object") throw new Error("BACKUP_INVALID");
   const db = await getDatabase();
   await db.withTransactionAsync(async () => {
@@ -541,14 +733,29 @@ export async function restoreDatabaseJson(value: unknown): Promise<void> {
     for (const name of [...names].reverse())
       await db.runAsync(`DELETE FROM ${name}`);
     for (const name of names) {
-      const rows = (tables as Record<string, unknown>)[name];
+      const rows =
+        (tables as Record<string, unknown>)[name] ??
+        (version === 1 && name === "planning_profiles" ? [] : undefined);
       if (!Array.isArray(rows)) throw new Error(`BACKUP_TABLE_MISSING:${name}`);
       const columns = backupColumns[name];
       for (const row of rows) {
         if (!row || typeof row !== "object")
           throw new Error(`BACKUP_ROW_INVALID:${name}`);
         const record = row as Record<string, unknown>;
-        const values = columns.map((column) => record[column]);
+        const values = columns.map((column) =>
+          version === 1 && name === "assets" && column === "bucket"
+            ? "LONG_TERM"
+            : record[column],
+        );
+        if (name === "planning_profiles") {
+          if (record.kind !== "active" && record.kind !== "draft")
+            throw new Error("BACKUP_PLAN_INVALID");
+          const schema =
+            record.kind === "active"
+              ? PlanningProfileSchema
+              : PlanningDraftSchema;
+          schema.parse(JSON.parse(String(record.profile_json)));
+        }
         if (values.some((item) => item === undefined))
           throw new Error(`BACKUP_COLUMN_MISSING:${name}`);
         await db.runAsync(
@@ -557,5 +764,6 @@ export async function restoreDatabaseJson(value: unknown): Promise<void> {
         );
       }
     }
+    if (version === 1) await setSetting("projection_legacy_available", "true");
   });
 }

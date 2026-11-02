@@ -1,4 +1,4 @@
-import type { ArcaClass } from '@arca/domain';
+import { getAssetCatalogMetadata, type ArcaClass } from '@arca/domain';
 import type { Env, Quote } from './contracts';
 
 interface BrapiQuoteResponse {
@@ -47,11 +47,11 @@ export async function fetchQuote(symbol: string, env: Env): Promise<Quote> {
   };
 }
 
-function matchesClass(item: NonNullable<BrapiListResponse['stocks']>[number], arcaClass: ArcaClass): boolean {
-  const type = item.type?.toLowerCase() ?? '';
-  if (arcaClass === 'REAL_ESTATE') return type.includes('fund') || type.includes('fii');
-  if (arcaClass === 'INTERNATIONAL') return type.includes('bdr') || type.includes('etf');
-  return arcaClass === 'BRAZIL_STOCKS' && !type.includes('fund') && !type.includes('bdr') && !type.includes('etf');
+export function matchesClass(item: NonNullable<BrapiListResponse['stocks']>[number], arcaClass: ArcaClass): boolean {
+  // A fund suffix or an ETF/BDR label does not establish underlying exposure.
+  // Only candidates whose exposure has been researched enter the suggestions.
+  const entry = getAssetCatalogMetadata(item.stock ?? '');
+  return entry != null && entry.arcaClass === arcaClass;
 }
 
 export async function screenByLiquidity(arcaClass: ArcaClass, env: Env) {
@@ -69,12 +69,14 @@ export async function screenByLiquidity(arcaClass: ArcaClass, env: Env) {
   const capturedAt = new Date().toISOString();
   const items = stocks
     .filter((candidate) => candidate.stock && matchesClass(candidate, arcaClass))
+    .sort((a, b) => (b.volume ?? 0) - (a.volume ?? 0))
     .slice(0, 10)
     .map((item) => ({
+      ...getAssetCatalogMetadata(item.stock!),
       arcaClass,
       symbol: item.stock!,
       name: item.name ?? item.stock!,
-      criterion: 'Ranking por volume negociado disponível',
+      criterion: 'Exemplos do catálogo verificado, ordenados pelo volume disponível. Volume não é indicação de compra.',
       score: String(item.volume ?? 0),
       source: 'brapi.dev',
       capturedAt,

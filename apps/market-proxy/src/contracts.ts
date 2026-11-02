@@ -1,4 +1,4 @@
-import { ArcaClassSchema } from '@arca/domain';
+import { ArcaClassSchema, ScreeningMetadataSchema } from '@arca/domain';
 import { z } from 'zod';
 
 export const QuoteSchema = z.object({
@@ -15,6 +15,7 @@ export const QuoteSchema = z.object({
 export type Quote = z.infer<typeof QuoteSchema>;
 
 export const ScreeningItemSchema = z.object({
+  ...ScreeningMetadataSchema.partial().shape,
   arcaClass: ArcaClassSchema,
   symbol: z.string(),
   name: z.string(),
