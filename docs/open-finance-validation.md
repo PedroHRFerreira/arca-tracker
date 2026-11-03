@@ -23,3 +23,14 @@ Interface local em `http://localhost:8084/banks`, serviço temporário isolado c
 ## Conferência física pendente
 
 Não há Android físico conectado. Abrir de fato Nubank/Mercado Pago instalados, teclado nativo, fontes ampliadas, notificações e primeira compra real devem ser conferidos no celular do titular. Testes do adaptador e compilação não comprovam abertura real de outro app ou entrega de notificação. A chave pessoal é configurada uma vez em Meus bancos; a carteira anterior permanece no SQLite ao instalar a atualização por cima.
+
+## APK entregue
+
+- Compilação EAS concluída em 02/11/2026 às 22:45 (São Paulo), versão 0.4.0, código Android 6, commit `0b2ca41`. Duração: 17 minutos.
+- [Página da compilação](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/25331167-05aa-48a7-a465-f7d030998b42) e [APK](https://expo.dev/artifacts/eas/_tb4HzyIfObYunew0fc4iHpPliGUjW67u8Ar4IXfbGU.apk).
+- Arquivo baixado pelo CLI oficial e integridade ZIP conferida. Manifesto confirma `com.pedro.arcatracker`, versão 0.4.0 e código 6; certificado de assinatura v2 idêntico ao APK 0.3.0.
+- Módulos nativos de abertura de aplicativos e leitura de PDF presentes. Manifesto contém somente os dois pacotes bancários esperados nas consultas, sem `QUERY_ALL_PACKAGES`. Endereço HTTPS do serviço e tratamento de aplicações resgatadas presentes no pacote JavaScript final.
+- Nenhum Client ID, Client Secret, token pessoal ou ID real de conexão foi encontrado nos arquivos do APK. Nenhum desses valores acompanha o relatório.
+- SHA-256: `451448216b36e5dba61cc6768c0b8d543ab626ed30a02b7ef2850a2c9f7c6d4d`.
+
+O resultado confirma o pacote assinado e sua composição. Permanecem as conferências físicas descritas acima; não foi realizado negócio financeiro real para testar o aplicativo.

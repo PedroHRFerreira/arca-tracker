@@ -55,3 +55,7 @@ pnpm --filter @arca/market-proxy run deploy
 Depois de atualizar, confira `/health`, uma cotação e os grupos do catálogo com o token já configurado, sem exibir credenciais nos logs.
 
 Referências: [APK e instalação](https://docs.expo.dev/build-reference/apk/), [variáveis do EAS](https://docs.expo.dev/eas/environment-variables/) e [versões remotas](https://docs.expo.dev/build-reference/app-versions/).
+
+## Entrega 0.4.0
+
+APK Android 0.4.0 (código 6), gerado a partir do commit `0b2ca41`, com a mesma assinatura da versão 0.3.0. [Instalação pelo Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/25331167-05aa-48a7-a465-f7d030998b42). Evidências em [validação da conexão pessoal](open-finance-validation.md). A primeira conexão bancária no aparelho usa a chave pessoal em Carteira → Meus bancos, mantida fora do APK e do backup.
