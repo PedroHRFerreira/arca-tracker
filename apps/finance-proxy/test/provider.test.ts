@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prepareFinanceTrades, getFinanceTotals } from '@arca/domain';
 import { loadPersonalSnapshot } from '../src/provider';
-import worker from '../src/index';
+import worker, { type FinanceRuntime } from '../src/index';
 
 const itemId = '11111111-1111-4111-8111-111111111111';
 const item = { id: itemId, institution: 'NUBANK' as const };
 const fees = Object.fromEntries(['serviceTax', 'brokerageFee', 'incomeTax', 'tradingAssetsNoticeFee', 'maintenanceFee', 'settlementFee', 'clearingFee', 'stockExchangeFee', 'custodyFee', 'operatingFee', 'other'].map(name => [name, 0]));
-const env: FinanceEnv = { ALLOWED_ORIGINS: 'http://localhost:8083,http://localhost:8084', PLUGGY_CLIENT_ID: 'synthetic-client', PLUGGY_CLIENT_SECRET: 'synthetic-secret', ARCA_FINANCE_TOKEN: 'synthetic-private-key-at-least-32-characters', PERSONAL_ITEMS_JSON: JSON.stringify([item]) };
+const env: FinanceRuntime = { ALLOWED_ORIGINS: 'http://localhost:8083,http://localhost:8084,http://localhost:8085', PLUGGY_CLIENT_ID: 'synthetic-client', PLUGGY_CLIENT_SECRET: 'synthetic-secret', ARCA_FINANCE_TOKEN: 'synthetic-private-key-at-least-32-characters', PERSONAL_ITEMS_JSON: JSON.stringify([item]) };
 function provider(overrides: { expenses?: unknown; accounts?: unknown[]; itemStatus?: string; badInvestments?: boolean; pages?: boolean } = {}) {
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(String(input));

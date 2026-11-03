@@ -6,7 +6,8 @@ import { useEffect } from "react";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { MotionProvider, useReducedMotion } from "@/motion/Motion";
 import { AppState, Platform, View } from "react-native";
-import { refreshScheduledReminders } from "@/notifications";
+import { refreshScheduledReminders, refreshControlReminders } from "@/notifications";
+import { useControl } from "@/providers/useControl";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 export default function RootLayout() {
@@ -65,6 +66,9 @@ function AppStack() {
         }}
       />
       <Stack.Screen name="settings" options={{ presentation: "card" }} />
+      <Stack.Screen name="finance-entry" options={{ presentation: "modal", animation: reduced ? "none" : "slide_from_bottom" }} />
+      <Stack.Screen name="finance-settings" options={{ presentation: "card" }} />
+      <Stack.Screen name="finance-banks" options={{ presentation: "card" }} />
       <Stack.Screen
         name="banks"
         options={{ presentation: "card", title: "Meus bancos" }}
@@ -79,6 +83,7 @@ function AppStack() {
 
 function RemindersSync() {
   const { ready, activePlan } = useApp();
+  const control = useControl();
   useEffect(() => {
     if (!ready) return;
     const reconcile = () => {
@@ -90,5 +95,12 @@ function RemindersSync() {
     });
     return () => subscription.remove();
   }, [ready, activePlan]);
+  useEffect(() => {
+    if (!ready || !control.ready) return;
+    const reconcile = () => { refreshControlReminders(control.state).catch(() => undefined); };
+    reconcile();
+    const subscription = AppState.addEventListener('change', value => { if (value === 'active') reconcile(); });
+    return () => subscription.remove();
+  }, [ready, control.ready, control.state]);
   return null;
 }

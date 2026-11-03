@@ -1,11 +1,14 @@
 import {
   calculatePortfolio,
   calculateRebalance,
+  applyControlCommand,
   type ArcaClass,
   type PortfolioSummary,
   type PlanningProfile,
 } from "@arca/domain";
 import Decimal from "decimal.js";
+import * as Crypto from "expo-crypto";
+import { AppState } from "react-native";
 import {
   createContext,
   useCallback,
@@ -16,6 +19,9 @@ import {
   type PropsWithChildren,
 } from "react";
 import { fetchMarketQuote } from "@/api/market";
+import { syncControl } from "@/api/control";
+import { readFinanceKey } from "@/api/finance-key";
+import { loadControlBundle, saveControlBundle, withControlLock } from "@/db/control";
 import {
   getSetting,
   getActivePlan,
@@ -68,7 +74,7 @@ export function AppProvider({ children }: PropsWithChildren) {
   const [tolerance, setTolerance] = useState("5");
   const [rebalanceAcknowledged, setRebalanceAcknowledged] = useState(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => withControlLock(async () => {
     setStartupError(null);
     try {
       await migrateDatabase();
@@ -124,6 +130,34 @@ export function AppProvider({ children }: PropsWithChildren) {
         nextPortfolio.allocations,
       );
       setRebalanceAcknowledged(await isLatestSnapshotAcknowledged());
+      try {
+      const bundle = await loadControlBundle();
+      // A new installation must pull an existing online budget before publishing
+      // its portfolio. Offline edits to an already initialized cache remain local.
+      const mayPublish = bundle.state.revision > 0 || !(await readFinanceKey());
+      if (mayPublish && !bundle.conflict && !bundle.restorePending) {
+        const cents = (value: string) => new Decimal(value).times(100).toDecimalPlaces(0).toNumber();
+        const snapshot = {
+          investedCents: cents(nextPortfolio.totalValue),
+          reserveCents: cents(registeredReserve),
+          contributionCents: bundle.state.settings.activeContributionCents,
+          goalName: plan?.objective ?? null,
+        };
+        const previous = bundle.state.portfolio;
+        const changed = !previous || previous.investedCents !== snapshot.investedCents ||
+          previous.reserveCents !== snapshot.reserveCents || previous.contributionCents !== snapshot.contributionCents ||
+          previous.goalName !== snapshot.goalName;
+        const needsReview = previous && Date.now() - Date.parse(previous.updatedAt) >= 24 * 60 * 60 * 1000;
+        if ((changed || needsReview) && (nextAssets.length > 0 || !previous?.investedCents)) {
+          const now = new Date().toISOString();
+          const command = { type: "SET_PORTFOLIO" as const, id: Crypto.randomUUID(), baseRevision: bundle.state.revision,
+            createdAt: now, portfolio: { ...snapshot, updatedAt: now } };
+          await saveControlBundle({ ...bundle, state: applyControlCommand(bundle.state, command), pending: [...bundle.pending, command] });
+        }
+      }
+      } catch {
+        // An unavailable finance cache/key must not prevent opening the portfolio.
+      }
       setReady(true);
     } catch (error) {
       setStartupError(
@@ -131,11 +165,31 @@ export function AppProvider({ children }: PropsWithChildren) {
       );
       throw error;
     }
-  }, []);
+  }), []);
 
   useEffect(() => {
     refresh().catch(console.error);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let running = false;
+    const synchronize = async () => {
+      if (running) return;
+      running = true;
+      try {
+        if (!(await readFinanceKey())) return;
+        await syncControl();
+        await refresh();
+        await syncControl();
+      } catch {
+        // The cached budget and its pending commands stay intact without network.
+      } finally { running = false; }
+    };
+    void synchronize();
+    const subscription = AppState.addEventListener("change", state => { if (state === "active") void synchronize(); });
+    return () => subscription.remove();
+  }, [ready, refresh]);
 
   const syncQuotes = useCallback(async () => {
     for (const asset of assets.filter((item) => item.quoteMode === "API")) {

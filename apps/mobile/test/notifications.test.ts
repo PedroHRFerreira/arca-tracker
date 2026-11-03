@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultPlanningProfile } from "@arca/domain";
+import { defaultPlanningProfile, createControlState, ControlBillSchema, ControlCardSchema, ControlPaymentSchema } from "@arca/domain";
 
 const state = vi.hoisted(() => ({
   granted: true,
@@ -46,6 +46,8 @@ vi.mock("expo-notifications", () => ({
 import {
   configureReminders,
   getReminderPreferences,
+  enableControlBillReminders,
+  refreshControlReminders,
 } from "../src/notifications";
 import * as N from "expo-notifications";
 
@@ -57,6 +59,45 @@ beforeEach(() => {
   state.settings.clear();
   state.granted = true;
   state.platform.OS = "android";
+});
+
+describe('financial reminders preserve existing features', () => {
+  function financialState() {
+    const value = createControlState('2026-01-01T10:00:00Z');
+    value.settings.alerts.bills = true;
+    value.cards.push(ControlCardSchema.parse({ id: 'synthetic-card', name: 'Cartão de teste' }));
+    value.bills.push(ControlBillSchema.parse({ id: 'synthetic-bill', cardId: 'synthetic-card', month: '2026-01', totalCents: 12000, dueDate: '2026-01-10', verification: 'CONFIRMED' }));
+    return value;
+  }
+  it('schedules once, then cancels only paid bill reminders', async () => {
+    const value = financialState();
+    await configureReminders({ contribution: false, review: true, history: true });
+    await refreshControlReminders(value); await refreshControlReminders(value);
+    expect(state.records).toHaveLength(6);
+    value.payments.push(ControlPaymentSchema.parse({ id: 'paid', billId: 'synthetic-bill', amountCents: 12000, paidDate: '2026-01-01', confirmed: true, affectsCash: false }));
+    await refreshControlReminders(value);
+    expect(state.records.map(row => row.identifier).sort()).toEqual(['arca-history', 'arca-review']);
+  });
+  it('requests permission only on explicit activation, with denial non-blocking', async () => {
+    const value = financialState(); state.granted = false;
+    expect(await refreshControlReminders(value)).toBe(false);
+    expect(N.requestPermissionsAsync).not.toHaveBeenCalled();
+    expect(await enableControlBillReminders(value)).toBe(false);
+    expect(N.requestPermissionsAsync).toHaveBeenCalledTimes(1);
+    expect(state.records).toEqual([]);
+  });
+  it('never schedules unverified historical bill payment status', async () => {
+    const value = financialState(); value.bills[0]!.paymentStatusKnown = false;
+    await refreshControlReminders(value);
+    expect(state.records).toEqual([]);
+  });
+  it('keeps the legacy contribution preference without scheduling a disabled financial contribution', async () => {
+    const value = financialState();
+    state.settings.set('control_bundle_v1', JSON.stringify({ state: value }));
+    await configureReminders({ contribution: true, review: true, history: true }, defaultPlanningProfile());
+    expect(state.records.map(row => row.identifier).sort()).toEqual(['arca-history', 'arca-review']);
+    expect((await getReminderPreferences()).contribution).toBe(true);
+  });
 });
 
 describe("independent local reminders", () => {

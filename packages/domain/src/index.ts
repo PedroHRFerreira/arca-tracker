@@ -8,3 +8,6 @@ export * from './catalog';
 export * from './imports';
 export * from './openFinance';
 export * from './banks';
+export * from './control';
+export * from './controlCalculations';
+export * from './controlAlerts';

@@ -20,6 +20,7 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen name="dashboard" options={{ title: "Início" }} />
+      <Tabs.Screen name="finances" options={{ title: "Finanças" }} />
       <Tabs.Screen name="plan" options={{ title: "Meu plano" }} />
       <Tabs.Screen name="assets" options={{ title: "Carteira" }} />
       <Tabs.Screen name="evolution" options={{ title: "Evolução" }} />

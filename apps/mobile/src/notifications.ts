@@ -4,6 +4,9 @@ import {
   contributionDates,
   localDateString,
   type PlanningProfile,
+  type ControlState,
+  controlBillPaidCents,
+  getControlAlerts,
 } from "@arca/domain";
 import { getSetting, setSetting } from "@/db/database";
 
@@ -68,6 +71,16 @@ async function reconcileReminders(
     Constants.executionEnvironment !== ExecutionEnvironment.StoreClient;
   const result = { ...preferences };
   if (!supported) return { ...noReminders };
+  const controlRaw = await getSetting('control_bundle_v1');
+  if (controlRaw) {
+    try {
+      const control = JSON.parse(controlRaw).state as ControlState;
+      const initialized = control.accounts.length + control.incomes.length + control.expenses.length + control.cards.length > 0;
+      if (initialized) profile = control.settings.activeContributionCents > 0 && profile
+        ? { ...profile, contributionAmount: (control.settings.activeContributionCents / 100).toFixed(2), frequency: 'MONTHLY' }
+        : null;
+    } catch { profile = null; }
+  }
   const N = await import("expo-notifications");
   const wantsAny = kinds.some((kind) => preferences[kind]);
   let permission = await N.getPermissionsAsync();
@@ -190,4 +203,47 @@ export async function configureLocalReminders(
     history: enabled,
   });
   return result.review || result.history;
+}
+
+export function enableControlBillReminders(state: ControlState): Promise<boolean> {
+  return serialize(() => reconcileControlReminders(state, true));
+}
+export function refreshControlReminders(state: ControlState): Promise<boolean> {
+  return serialize(() => reconcileControlReminders(state, false));
+}
+async function reconcileControlReminders(state: ControlState, requestPermission: boolean): Promise<boolean> {
+  if (Platform.OS === 'web' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return false;
+  const N = await import('expo-notifications');
+  const wants = Object.entries(state.settings.alerts).some(([key, value]) => key !== 'hour' && key !== 'discord' && value === true);
+  let permission = await N.getPermissionsAsync();
+  if (wants && !permission.granted && requestPermission) permission = await N.requestPermissionsAsync();
+  if (Platform.OS === 'android') await N.setNotificationChannelAsync('arca-finances', { name: 'Seu controle financeiro', importance: N.AndroidImportance.DEFAULT });
+  const now = new Date();
+  const desired: Array<{ identifier: string; title: string; body: string; date: Date }> = [];
+  if (permission.granted && state.settings.alerts.bills) for (const bill of state.bills.filter(row => !row.cancelled && row.verification === 'CONFIRMED' && row.paymentStatusKnown)) {
+    const outstanding = Math.max(0, bill.totalCents - controlBillPaidCents(state, bill.id, localDateString()));
+    if (!outstanding) continue;
+    for (const days of [7, 3, 1, 0]) {
+      const at = new Date(`${bill.dueDate}T${String(state.settings.alerts.hour).padStart(2, '0')}:00:00`);
+      at.setDate(at.getDate() - days);
+      if (at <= now) continue;
+      desired.push({ identifier: `arca-finance-bill:${bill.id}:${bill.dueDate}:${days}`, title: days ? `Fatura vence em ${days} dia${days === 1 ? '' : 's'}` : 'Fatura vence hoje',
+        body: `${state.cards.find(row => row.id === bill.cardId)?.name ?? 'Cartão'}: confira o valor restante no ARCA antes de pagar.`, date: at });
+    }
+  }
+  desired.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const rolling = desired.slice(0, 36);
+  const fingerprint = JSON.stringify(rolling.map(row => ({ ...row, date: row.date.toISOString() })));
+  const scheduled = (await N.getAllScheduledNotificationsAsync()).filter(row => row.content.data?.arcaReminder === 'finance-bills');
+  if (scheduled.length !== rolling.length || scheduled.some(row => row.content.data?.fingerprint !== fingerprint)) {
+    for (const row of scheduled) await N.cancelScheduledNotificationAsync(row.identifier);
+    for (const row of rolling) await N.scheduleNotificationAsync({ identifier: row.identifier, content: { title: row.title, body: row.body, data: { arcaReminder: 'finance-bills', fingerprint } }, trigger: { type: N.SchedulableTriggerInputTypes.DATE, date: row.date, channelId: 'arca-finances' } });
+  }
+  if (permission.granted) for (const alert of getControlAlerts(state, localDateString()).filter(row => !row.key.startsWith('bill:'))) {
+    const deliveredKey = `control_notification:${alert.key}`;
+    if (await getSetting(deliveredKey)) continue;
+    await N.scheduleNotificationAsync({ identifier: `arca-finance-${alert.key}`, content: { title: alert.title, body: alert.body, data: { arcaReminder: 'finance-budget' } }, trigger: null });
+    await setSetting(deliveredKey, new Date().toISOString());
+  }
+  return permission.granted;
 }

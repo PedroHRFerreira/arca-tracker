@@ -7,6 +7,8 @@ import {
   PlanningProfileSchema,
   validatePlanningTargets,
   ReviewedImportTradeSchema,
+  ControlStateSchema,
+  ControlCommandSchema,
   investmentTradeIdentity,
   type ReviewedImportTrade,
   type AssetBucket,
@@ -1004,14 +1006,15 @@ export async function exportDatabaseJson() {
   const tables: Record<string, unknown[]> = {};
   for (const name of Object.keys(backupColumns))
     tables[name] = await db.getAllAsync(`SELECT * FROM ${name}`);
-  return { version: 2, exportedAt: new Date().toISOString(), tables };
+  // Access keys live in SecureStore/sessionStorage and are never part of this backup.
+  return { version: 3, exportedAt: new Date().toISOString(), tables };
 }
 
 export async function restoreDatabaseJson(value: unknown): Promise<void> {
   if (
     !value ||
     typeof value !== "object" ||
-    ![1, 2].includes((value as { version: number }).version)
+    ![1, 2, 3].includes((value as { version: number }).version)
   )
     throw new Error("BACKUP_VERSION_UNSUPPORTED");
   const tables = (value as { tables?: unknown }).tables;
@@ -1034,6 +1037,13 @@ export async function restoreDatabaseJson(value: unknown): Promise<void> {
         if (!row || typeof row !== "object")
           throw new Error(`BACKUP_ROW_INVALID:${name}`);
         const record = row as Record<string, unknown>;
+        if (name === "app_settings" && record.key === "control_bundle_v1") {
+          const bundle = JSON.parse(String(record.value));
+          ControlStateSchema.parse(bundle.state);
+          ControlStateSchema.parse(bundle.base);
+          if (!Array.isArray(bundle.pending)) throw new Error("BACKUP_CONTROL_INVALID");
+          bundle.pending.forEach((command: unknown) => ControlCommandSchema.parse(command));
+        }
         const values = columns.map((column) =>
           version === 1 && name === "assets" && column === "bucket"
             ? "LONG_TERM"
@@ -1057,5 +1067,7 @@ export async function restoreDatabaseJson(value: unknown): Promise<void> {
       }
     }
     if (version === 1) await setSetting("projection_legacy_available", "true");
+    // Restoring a device backup never silently replaces the private shared ledger.
+    if (await getSetting("control_bundle_v1")) await setSetting("control_restore_pending_v1", "true");
   });
 }

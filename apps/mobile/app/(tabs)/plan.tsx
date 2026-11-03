@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { evaluatePlan, getPlanTargets } from "@arca/domain";
@@ -9,9 +9,11 @@ import { Button, Card, ScreenHeader } from "@/components/ui";
 import { activatePlan, setSetting } from "@/db/database";
 import { configureReminders, getReminderPreferences } from "@/notifications";
 import { useApp } from "@/providers/AppProvider";
+import { useControl } from "@/providers/useControl";
 import { colors, layout } from "@/theme";
 
 export default function PlanScreen() {
+  const { fontScale } = useWindowDimensions();
   const {
     activePlan,
     strategyPortfolio,
@@ -19,6 +21,16 @@ export default function PlanScreen() {
     hasReserveAssets,
     refresh,
   } = useApp();
+  const control = useControl();
+  const detailed = control.ready && control.state.settings.reviewed;
+  const displayPlan = activePlan && detailed ? {
+    ...activePlan,
+    contributionAmount: (control.summary.activeContributionCents / 100).toFixed(2),
+    frequency: "MONTHLY" as const,
+    essentialExpenses: (control.summary.essentialExpensesCents / 100).toFixed(2),
+    reserveMonths: control.state.settings.reserveMonths,
+  } : activePlan;
+  const displayReserve = detailed ? (control.summary.reserveCents / 100).toFixed(2) : reserveValue;
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -49,12 +61,12 @@ export default function PlanScreen() {
   }
   return (
     <SafeAreaView style={styles.page} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: layout.tabBottomSpace + Math.max(0, fontScale - 1) * 62 }]}>
         <ScreenHeader
           title="Meu plano"
           subtitle="Seu caminho, uma etapa de cada vez."
         />
-        {!activePlan ? (
+        {!displayPlan ? (
           <Card>
             <Text style={styles.title}>Vamos dar sentido à sua carteira?</Text>
             <Text style={styles.copy}>
@@ -69,12 +81,23 @@ export default function PlanScreen() {
         ) : (
           <>
             <PlanSummary
-              profile={activePlan}
+              profile={displayPlan}
               portfolio={strategyPortfolio}
-              reserveValue={reserveValue}
-              reserveRegistered={hasReserveAssets}
+              reserveValue={displayReserve}
+              reserveRegistered={detailed || hasReserveAssets}
             />
-            {evaluatePlan(activePlan, reserveValue).phase === "DEBT" && (
+            {detailed && (
+              <Card>
+                <Text style={styles.title}>Seu orçamento acompanha o plano</Text>
+                <Text style={styles.copy}>
+                  {control.summary.activeContributionCents === 0
+                    ? "O valor desejado é uma meta. Seus aportes recorrentes permanecem desativados até você revisar e confirmar uma disponibilidade real."
+                    : "O aporte ativo é mensal. Confira a capacidade de hoje em Finanças antes de registrar uma compra realizada."}
+                </Text>
+                <Button title="Ver minhas finanças" variant="secondary" onPress={() => router.push("/(tabs)/finances")} />
+              </Card>
+            )}
+            {evaluatePlan(displayPlan, displayReserve).phase === "DEBT" && (
               <Card>
                 <Text style={styles.title}>
                   Conseguiu resolver as dívidas caras?
@@ -125,11 +148,11 @@ export default function PlanScreen() {
               onPress={() => router.push("/onboarding?mode=edit")}
             />
             <AssetOptions
-              profile={activePlan}
-              reserveValue={reserveValue}
+              profile={displayPlan}
+              reserveValue={displayReserve}
               portfolio={strategyPortfolio}
-              strategy={activePlan.strategy}
-              targets={getPlanTargets(activePlan)}
+              strategy={displayPlan.strategy}
+              targets={getPlanTargets(displayPlan)}
             />
             <Card>
               <Text style={styles.title}>Ajustes da carteira</Text>

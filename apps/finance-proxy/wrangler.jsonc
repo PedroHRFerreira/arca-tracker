@@ -5,5 +5,9 @@
   "compatibility_date": "2026-11-02",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": false },
-  "vars": { "ALLOWED_ORIGINS": "http://localhost:8083,http://localhost:8084" }
+  "vars": { "ALLOWED_ORIGINS": "http://localhost:8083,http://localhost:8084,http://localhost:8085" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "arca-control", "database_id": "b27b4ac9-120e-436e-9348-0184a75021b9", "migrations_dir": "migrations" }
+  ],
+  "triggers": { "crons": ["0 * * * *"] }
 }

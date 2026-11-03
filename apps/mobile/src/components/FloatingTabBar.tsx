@@ -24,6 +24,7 @@ const destinations = [
     icon: "home-outline",
     activeIcon: "home",
   },
+  { name: "finances", title: "Finanças", icon: "card-outline", activeIcon: "card" },
   { name: "plan", title: "Meu plano", icon: "map-outline", activeIcon: "map" },
   {
     name: "assets",
@@ -42,7 +43,7 @@ const destinations = [
 export function FloatingTabBar({ state, navigation }: TabBarProps) {
   const reduced = useReducedMotion();
   const insets = useSafeAreaInsets();
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, width: screenWidth } = useWindowDimensions();
   const [width, setWidth] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
   const routeName = state.routes[state.index]?.name;
@@ -56,7 +57,7 @@ export function FloatingTabBar({ state, navigation }: TabBarProps) {
     0,
     destinations.findIndex((item) => item.name === selected),
   );
-  const itemWidth = Math.max(0, (width - 12) / 4);
+  const itemWidth = Math.max(0, (width - 12) / destinations.length);
   useEffect(() => {
     if (reduced || !width) {
       x.setValue(index * itemWidth);
@@ -72,11 +73,11 @@ export function FloatingTabBar({ state, navigation }: TabBarProps) {
     movement.start();
     return () => movement.stop();
   }, [index, itemWidth, reduced, width, x]);
-  const height = 72 + Math.max(0, fontScale - 1) * 42;
+  const height = 76 + Math.max(0, fontScale - 1) * 62;
   return (
     <View
       pointerEvents="box-none"
-      style={[styles.position, { bottom: Math.max(insets.bottom, 12) }]}
+      style={[styles.position, { bottom: Math.max(insets.bottom, 12), left: screenWidth < 360 ? 8 : 16, right: screenWidth < 360 ? 8 : 16 }]}
     >
       <View style={styles.shadow}>
         <BlurView
@@ -130,7 +131,6 @@ export function FloatingTabBar({ state, navigation }: TabBarProps) {
                     color={focused ? colors.primary : colors.muted}
                   />
                   <Text
-                    numberOfLines={2}
                     style={[styles.label, focused && styles.activeLabel]}
                   >
                     {item.title}
@@ -172,6 +172,8 @@ const styles = StyleSheet.create({
   },
   item: {
     flex: 1,
+    minWidth: 0,
+    flexBasis: 0,
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
@@ -180,6 +182,7 @@ const styles = StyleSheet.create({
     minHeight: 58,
   },
   label: {
+    alignSelf: "stretch",
     fontSize: 11,
     lineHeight: 15,
     textAlign: "center",

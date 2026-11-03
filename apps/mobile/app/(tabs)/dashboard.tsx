@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ARCA_LABELS, evaluatePlan, nextContributionDate } from "@arca/domain";
@@ -14,9 +15,13 @@ import { DonutChart } from "@/components/DonutChart";
 import { Button, Card } from "@/components/ui";
 import { PressFeedback, Reveal } from "@/motion/Motion";
 import { useApp, useRebalance } from "@/providers/AppProvider";
+import { useControl } from "@/providers/useControl";
+import { readFinanceKey } from "@/api/finance-key";
+import { controlDateLabel } from "@/components/ControlUI";
 import { arcaColors, colors, layout, money } from "@/theme";
 
 export default function Dashboard() {
+  const { fontScale } = useWindowDimensions();
   const {
     portfolio,
     strategyPortfolio,
@@ -27,26 +32,36 @@ export default function Dashboard() {
     syncQuotes,
     rebalanceAcknowledged,
   } = useApp();
+  const control = useControl();
+  const detailed = control.ready && control.state.settings.reviewed;
+  const displayPlan = activePlan && detailed ? {
+    ...activePlan,
+    contributionAmount: (control.summary.activeContributionCents / 100).toFixed(2),
+    frequency: "MONTHLY" as const,
+    essentialExpenses: (control.summary.essentialExpensesCents / 100).toFixed(2),
+    reserveMonths: control.state.settings.reserveMonths,
+  } : activePlan;
+  const displayReserve = detailed ? (control.summary.reserveCents / 100).toFixed(2) : reserveValue;
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
   const [hidden, setHidden] = useState(false);
   const rebalance = useRebalance();
-  const evaluation = activePlan ? evaluatePlan(activePlan, reserveValue) : null;
+  const evaluation = displayPlan ? evaluatePlan(displayPlan, displayReserve) : null;
   const hasAlert =
     evaluation?.phase === "INVEST" &&
     !rebalanceAcknowledged &&
     rebalance.suggestions.some((item) => item.outsideTolerance);
-  const nextDate = activePlan
+  const nextDate = displayPlan && (!detailed || control.summary.activeContributionCents > 0)
     ? nextContributionDate(
-        activePlan.firstContributionDate,
-        activePlan.frequency,
+        displayPlan.firstContributionDate,
+        displayPlan.frequency,
       )
     : null;
   const reserveProgress =
     evaluation && Number(evaluation.reserveTarget) > 0
       ? Math.min(
           100,
-          (Number(reserveValue) / Number(evaluation.reserveTarget)) * 100,
+          (Number(displayReserve) / Number(evaluation.reserveTarget)) * 100,
         )
       : 0;
   const goalProgress =
@@ -60,6 +75,9 @@ export default function Dashboard() {
       : 0;
   const amount = (value: string) => (hidden ? "••••" : money(value));
   const goPlan = () => router.push("/(tabs)/plan");
+  const goFinances = () => router.push("/(tabs)/finances");
+  const financeNeedsReview = detailed && control.summary.investmentCapacityCents === null;
+  const prioritizeFinances = detailed && (financeNeedsReview || !!control.summary.nextObligation || control.summary.investmentCapacityCents === 0);
   const record = () =>
     router.push({
       pathname: "/contribution",
@@ -72,6 +90,7 @@ export default function Dashboard() {
     setRefreshError("");
     try {
       await syncQuotes();
+      if (await readFinanceKey()) await control.sync();
     } catch {
       setRefreshError(
         "Não foi possível atualizar agora. Seus últimos valores foram mantidos.",
@@ -83,7 +102,7 @@ export default function Dashboard() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: layout.tabBottomSpace + Math.max(0, fontScale - 1) * 62 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -179,12 +198,31 @@ export default function Dashboard() {
             }
           />
         </Reveal>
+        {detailed && (
+          <Card style={{ marginBottom: 22 }}>
+            <Text style={styles.nextTitle}>Seu dinheiro até o próximo salário</Text>
+            <View style={{ gap: 10, marginTop: 14 }}>
+              <Text style={styles.rowTitle}>Salário previsto: {controlDateLabel(control.summary.nextSalaryDate)}</Text>
+              <Text style={styles.description}>
+                {control.summary.spendUntilSalaryCents === null ? "Revise os dados pendentes antes de considerar um valor livre para gastar." : `Disponível para gastar: ${amount((control.summary.spendUntilSalaryCents / 100).toFixed(2))}, após os compromissos e a margem para imprevistos.`}
+              </Text>
+              {control.summary.nextObligation && <Text style={styles.description}>
+                Próximo compromisso: {control.summary.nextObligation.name} · {controlDateLabel(control.summary.nextObligation.dueDate)} · {amount((control.summary.nextObligation.amountCents / 100).toFixed(2))}
+              </Text>}
+              <Text style={styles.rowTitle}>{control.summary.investmentCapacityCents === null ? "Capacidade de aporte em revisão" : `Pode aportar hoje: ${amount((control.summary.investmentCapacityCents / 100).toFixed(2))}`}</Text>
+              <Text style={styles.microcopy}>{control.summary.activeContributionCents === 0 ? "Aporte recorrente desativado. O salário previsto ainda não é dinheiro recebido." : "A capacidade é calculada para hoje. Nenhum pagamento ou investimento é executado pelo app."}</Text>
+              <Button title={financeNeedsReview ? "Conferir minhas pendências" : "Ver orçamento e vencimentos"} variant="secondary" onPress={goFinances} />
+            </View>
+          </Card>
+        )}
         <View style={styles.sectionHeading}>
           <Text style={styles.sectionTitle}>Seu próximo passo</Text>
           <View style={styles.pill}>
             <View style={styles.pillDot} />
             <Text style={styles.pillText}>
-              {!evaluation
+              {prioritizeFinances
+                ? "Finanças"
+                : !evaluation
                 ? "Comece aqui"
                 : evaluation.phase === "DEBT"
                   ? "Organização"
@@ -212,7 +250,9 @@ export default function Dashboard() {
               />
             </View>
             <Text style={styles.nextTitle}>
-              {!evaluation
+              {prioritizeFinances
+                ? financeNeedsReview ? "Confira suas finanças" : "Mantenha suas contas em dia"
+                : !evaluation
                 ? "Um plano feito para você"
                 : evaluation.phase === "DEBT"
                   ? "Organize as dívidas caras"
@@ -222,8 +262,9 @@ export default function Dashboard() {
             </Text>
           </View>
           <Text style={styles.description}>
-            {evaluation?.explanation ??
-              "Conte seu objetivo e descubra quanto separar e por onde começar. Uma pergunta de cada vez."}
+            {prioritizeFinances
+              ? financeNeedsReview ? "Há informações pendentes. Confira saldos, receitas e compromissos para saber quanto cabe no seu orçamento." : "Veja os próximos vencimentos e mantenha sua margem para imprevistos antes de separar dinheiro para investir."
+              : evaluation?.explanation ?? "Conte seu objetivo e descubra quanto separar e por onde começar. Uma pergunta de cada vez."}
           </Text>
           {evaluation && (
             <View style={styles.steps}>
@@ -259,7 +300,7 @@ export default function Dashboard() {
                 <Text style={styles.progressLabel}>
                   {hidden
                     ? "••••"
-                    : `${money(reserveValue)} de ${money(evaluation.reserveTarget)}`}
+                    : `${money(displayReserve)} de ${money(evaluation.reserveTarget)}`}
                 </Text>
                 <Text style={styles.progressPercent}>
                   {reserveProgress.toFixed(0)}%
@@ -273,7 +314,7 @@ export default function Dashboard() {
                 <View style={[styles.fill, { width: `${reserveProgress}%` }]} />
               </View>
               <Text style={styles.microcopy}>
-                {hasReserveAssets
+                {detailed || hasReserveAssets
                   ? "Saldo dos investimentos da sua reserva."
                   : "Valor informado no plano, separado da carteira registrada."}
               </Text>
@@ -293,14 +334,18 @@ export default function Dashboard() {
             )}
           <Button
             title={
-              !activePlan
+              prioritizeFinances
+                ? "Ver minhas finanças"
+                : !activePlan
                 ? "Criar meu plano"
                 : evaluation?.phase === "DEBT"
                   ? "Revisar minhas dívidas"
                   : "Registrar um aporte realizado"
             }
             onPress={
-              !activePlan
+              prioritizeFinances
+                ? goFinances
+                : !activePlan
                 ? () => router.push("/onboarding")
                 : evaluation?.phase === "DEBT"
                   ? goPlan
@@ -331,12 +376,12 @@ export default function Dashboard() {
                     MONTHLY: "todo mês",
                     WEEKLY: "toda semana",
                     FORTNIGHTLY: "a cada 15 dias",
-                  }[activePlan.frequency]
+                  }[displayPlan?.frequency ?? activePlan.frequency]
                 }
               </Text>
             </View>
             <Text style={styles.contributionAmount}>
-              {amount(activePlan.contributionAmount)}
+              {amount(displayPlan?.contributionAmount ?? activePlan.contributionAmount)}
             </Text>
             <Ionicons name="chevron-forward" size={17} color={colors.muted} />
           </PressFeedback>
@@ -404,7 +449,7 @@ export default function Dashboard() {
         <View style={styles.localNote}>
           <Ionicons name="lock-closed-outline" size={13} color={colors.muted} />
           <Text style={styles.localText}>
-            Seus registros ficam neste aparelho.
+            {control.lastSyncAt ? "Finanças sincronizadas na sua base privada." : "Registros disponíveis neste aparelho."}
           </Text>
         </View>
       </ScrollView>
@@ -546,6 +591,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     gap: 8,
+    flexWrap: "wrap",
     marginBottom: 15,
   },
   sectionTitle: {

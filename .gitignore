@@ -14,6 +14,7 @@ coverage/
 android/
 ios/
 apps/market-proxy/.wrangler/
+apps/finance-proxy/.wrangler/
 apps/mobile/.expo/
 *.db
 *.db-journal
