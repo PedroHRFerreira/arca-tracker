@@ -16,7 +16,7 @@ Essa consulta valida autenticação, permissões e leitura das conexões reais. 
 
 ## Navegador
 
-Interface local em `http://localhost:8084/banks`, serviço temporário isolado com dados sintéticos em 8085. Chave inválida recusada; chave de teste conectou duas instituições. Saldos de conta e cartão separados, nenhuma compra criada, revisão vazia compreensível. Interrupção do serviço mostrou erro com cache preservado. Conferência em 320 × 700 sem elementos excedendo a largura; prova visual em arquivo temporário, sem dados reais. O ambiente sintético não integra o produto ou o APK. O fluxo guiado foi percorrido até a revisão, com valores fictícios; o exemplo Tesouro Selic exibiu finalidade, riscos, custos e instruções oficiais do Nubank, sem botão de abertura nativa na web. Nenhum plano ou operação foi ativado nessa conferência.
+Interface local em `http://localhost:8084/banks`, serviço temporário isolado com dados sintéticos em 8085. Chave inválida recusada; chave de teste conectou duas instituições. Saldos de conta e cartão separados, nenhuma compra criada, revisão vazia compreensível. Interrupção do serviço mostrou erro com cache preservado. Conferência em 320 × 700 sem elementos excedendo a largura; prova visual em arquivo temporário, sem dados reais. O ambiente sintético não integra o produto ou o APK. O fluxo guiado foi percorrido até a revisão, com valores fictícios; o exemplo Tesouro Selic exibiu finalidade, riscos, custos e instruções oficiais do Nubank, sem botão de abertura nativa na web. Nenhum plano ou operação foi ativado nessa conferência. Corrigido o preenchimento automático indevido de senha pelo navegador; depois de desconectar, o campo da chave permanece vazio e o botão fica desabilitado.
 
 ## Conferência física pendente
 

@@ -303,7 +303,8 @@ export default function Banks() {
             <Text style={styles.body}>Cole a chave de acesso pessoal configurada para sua conexão privada com o MeuPluggy. Ela não é a senha do banco.</Text>
             <Text style={styles.label}>Chave de acesso pessoal</Text>
             <TextInput accessibilityLabel="Chave de acesso pessoal" value={accessKey} onChangeText={setAccessKey}
-              secureTextEntry autoCorrect={false} autoCapitalize="none" editable={!disabled}
+              secureTextEntry autoComplete={Platform.OS === "web" ? "new-password" : "off"} textContentType="none" importantForAutofill="no"
+              autoCorrect={false} autoCapitalize="none" editable={!disabled}
               style={styles.input} returnKeyType="done" onSubmitEditing={connect} />
             <Text style={styles.hint}>A chave é guardada com segurança na versão instalada. Nunca informe sua senha bancária aqui.</Text>
             <Button title={busy === "connect" ? "Conectando…" : "Conectar meus bancos"} disabled={disabled || !accessKey.trim()} onPress={connect} />
