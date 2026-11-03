@@ -1,0 +1,8 @@
+Nubank
+Comprovante de compra
+Status: Aguardando execução
+Ativo: PETR4
+Data da compra: 02/11/2026
+Tipo de operação: Compra
+Quantidade: 3
+Preço: 32,45

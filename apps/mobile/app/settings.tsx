@@ -356,6 +356,19 @@ export default function Settings() {
           </Text>
         </Card>
         <Card style={styles.card}>
+          <Text style={styles.section}>Compras feitas na sua instituição</Text>
+          <Text style={styles.hint}>
+            Use o comprovante ou extrato para preparar o registro dos
+            investimentos. Você confere os dados antes de salvar na carteira.
+          </Text>
+          <Button
+            title="Importar comprovante ou extrato"
+            variant="secondary"
+            disabled={busy}
+            onPress={() => router.push("/import-investments")}
+          />
+        </Card>
+        <Card style={styles.card}>
           <Text style={styles.section}>Seus dados ficam com você</Text>
           <Text style={styles.hint}>
             Exporte uma cópia antes de trocar de aparelho. Restaurar substitui

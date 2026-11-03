@@ -19,8 +19,8 @@ export default function Assets() {
         <Card>
           <Text style={styles.infoTitle}>Planejar é diferente de investir</Text>
           <Text style={styles.text}>
-            Depois de comprar na sua instituição financeira, registre a
-            movimentação aqui para acompanhar os valores.
+            Depois de comprar na sua instituição financeira, importe o
+            comprovante ou registre a movimentação para acompanhar os valores.
           </Text>
         </Card>
         {!assets.length && (
@@ -133,6 +133,15 @@ export default function Assets() {
           title="Registrar investimento realizado"
           onPress={() => router.push("/contribution")}
         />
+        <View style={{ height: 12 }} />
+        <Button
+          title="Importar comprovante ou extrato"
+          variant="secondary"
+          onPress={() => router.push("/import-investments")}
+        />
+        <Text style={styles.importHint}>
+          Confira os dados da compra antes de adicioná-la à carteira.
+        </Text>
         <Text style={styles.footnote}>
           Para conhecer opções, riscos e fontes, visite Meu plano.
         </Text>
@@ -169,6 +178,13 @@ const styles = StyleSheet.create({
   assetName: { color: colors.ink, fontSize: 17, fontWeight: "800" },
   meta: { color: colors.muted, fontSize: 13, lineHeight: 20, marginTop: 6 },
   chevron: { fontSize: 26, color: colors.muted },
+  importHint: {
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 10,
+    textAlign: "center",
+  },
   footnote: {
     color: colors.muted,
     fontSize: 13,

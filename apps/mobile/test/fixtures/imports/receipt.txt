@@ -1,0 +1,9 @@
+Nubank
+Comprovante de compra
+Ativo: PETR4
+Nome do ativo: Petrobras PN
+Data da operação: 02/11/2026
+Operação: Compra
+Quantidade: 3
+Preço unitário: R$ 32,45
+Custos da operação: R$ 0,05

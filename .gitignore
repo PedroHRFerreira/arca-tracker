@@ -24,3 +24,14 @@ apps/mobile/.expo/
 credentials.json
 *.apk
 *.aab
+
+# Generated local PDF.js worker
+apps/mobile/public/pdf.worker.min.mjs
+
+# Local Expo modules contain source that must be included in native builds
+!apps/mobile/modules/*/android/
+!apps/mobile/modules/*/android/**
+!apps/mobile/modules/*/ios/
+!apps/mobile/modules/*/ios/**
+
+apps/mobile/public/pdf-reader.mjs

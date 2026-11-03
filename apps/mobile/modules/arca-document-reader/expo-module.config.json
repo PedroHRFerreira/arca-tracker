@@ -1,0 +1,5 @@
+{
+  "platforms": ["android", "apple"],
+  "android": { "modules": ["expo.modules.arcadocumentreader.ArcaDocumentReaderModule"] },
+  "apple": { "modules": ["ArcaDocumentReaderModule"] }
+}

@@ -6,6 +6,9 @@ import {
   PlanningDraftSchema,
   PlanningProfileSchema,
   validatePlanningTargets,
+  ReviewedImportTradeSchema,
+  investmentTradeIdentity,
+  type ReviewedImportTrade,
   type AssetBucket,
   type PlanningProfile,
   type ArcaClass,
@@ -491,6 +494,238 @@ export async function saveQuote(
     capturedAt,
     new Date().toISOString(),
   );
+}
+
+const importRegistryKey = "investment_import_transactions_v1";
+let importQueue: Promise<unknown> = Promise.resolve();
+
+function serializeInvestmentImport<T>(operation: () => Promise<T>): Promise<T> {
+  const result = importQueue.then(operation, operation);
+  importQueue = result.catch(() => undefined);
+  return result;
+}
+
+function readImportRegistry(value: string | null): Map<string, string> {
+  if (!value) return new Map();
+  const parsed: unknown = JSON.parse(value);
+  if (Array.isArray(parsed) && parsed.every((id) => typeof id === "string"))
+    return new Map(parsed.map((id) => [id, ""]));
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some((broker) => typeof broker !== "string")
+  )
+    throw new Error(
+      "O histórico de importações está inválido. Restaure um backup válido.",
+    );
+  return new Map(Object.entries(parsed as Record<string, string>));
+}
+
+type ImportLedgerRow = {
+  id: string;
+  tradeDate: string;
+  type: "BUY" | "SELL";
+  quantity: string;
+  unitPrice: string;
+  fees: string;
+  createdAt: string;
+};
+
+async function prepareInvestmentImport(input: ReviewedImportTrade[]) {
+  if (!input.length || input.length > 2000)
+    throw new Error("Selecione entre 1 e 2.000 operações para importar.");
+  const trades = input.map((trade) => ReviewedImportTradeSchema.parse(trade));
+  const db = await getDatabase();
+  const importedIds = readImportRegistry(await getSetting(importRegistryKey));
+  const additions: ReviewedImportTrade[] = [];
+  const assets = new Map<string, Asset | null>();
+  const warnings = new Set<string>();
+  let duplicates = 0;
+  for (const symbol of new Set(trades.map((trade) => trade.symbol))) {
+    const candidates = await db.getAllAsync<Asset>(
+      "SELECT id,symbol,name,arca_class AS arcaClass,asset_type AS assetType,quote_mode AS quoteMode,bucket,active FROM assets WHERE UPPER(symbol)=?",
+      symbol,
+    );
+    if (candidates.some((asset) => asset.active !== 1))
+      throw new Error(
+        `${symbol}: existe um cadastro arquivado. Revise esse ativo antes de importar para evitar duplicar sua carteira.`,
+      );
+    if (candidates.length > 1)
+      throw new Error(
+        `${symbol}: há mais de um cadastro. Revise os ativos antes de importar.`,
+      );
+    const asset = candidates[0] ?? null;
+    assets.set(symbol, asset);
+    const group = trades.filter((trade) => trade.symbol === symbol);
+    const reference = group[0]!;
+    if (
+      group.some(
+        (trade) =>
+          trade.arcaClass !== reference.arcaClass ||
+          trade.assetType !== reference.assetType,
+      )
+    )
+      throw new Error(
+        `${symbol}: escolha o mesmo tipo e categoria em todas as operações.`,
+      );
+    if (
+      asset &&
+      (asset.arcaClass !== reference.arcaClass ||
+        (asset.assetType !== "MARKET" &&
+          asset.assetType !== reference.assetType) ||
+        asset.bucket !== "LONG_TERM")
+    )
+      throw new Error(
+        `${symbol}: tipo, categoria ou destino diferentes do cadastro atual. Revise a operação; o cadastro existente será preservado.`,
+      );
+    const existing = asset
+      ? await db.getAllAsync<ImportLedgerRow>(
+          "SELECT id,type,trade_date AS tradeDate,quantity,unit_price AS unitPrice,fees,created_at AS createdAt FROM transactions WHERE asset_id=? ORDER BY trade_date,created_at",
+          asset.id,
+        )
+      : [];
+    const matches = new Map<string, ImportLedgerRow[]>();
+    for (const row of existing) {
+      const key = investmentTradeIdentity({ ...row, symbol });
+      const rows = matches.get(key) ?? [];
+      rows.push(row);
+      matches.set(key, rows);
+    }
+    const newForSymbol: ReviewedImportTrade[] = [];
+    for (const trade of group) {
+      const candidates = matches.get(investmentTradeIdentity(trade)) ?? [];
+      const normalizeBroker = (broker: string) =>
+        broker.trim().replace(/\s+/g, " ").toUpperCase();
+      const matchIndex = candidates.findIndex((candidate) => {
+        const broker = importedIds.get(candidate.id) ?? "";
+        return (
+          !broker ||
+          !trade.broker ||
+          normalizeBroker(broker) === normalizeBroker(trade.broker)
+        );
+      });
+      const match =
+        matchIndex < 0 ? undefined : candidates.splice(matchIndex, 1)[0];
+      if (match) {
+        duplicates++;
+        if (!importedIds.has(match.id))
+          warnings.add(
+            `${symbol}: uma operação idêntica já foi registrada manualmente ou veio de um backup antigo. Ela será ignorada para evitar duplicidade.`,
+          );
+        else if (!trade.broker || !importedIds.get(match.id))
+          warnings.add(
+            `${symbol}: há uma operação idêntica sem identificação completa da corretora. Ela será ignorada; confira as duplicatas antes de confirmar.`,
+          );
+      } else {
+        additions.push(trade);
+        newForSymbol.push(trade);
+      }
+    }
+    // Validate the entire chronological ledger, including already-recorded future sales.
+    // A historical buy must not be appended after a sale simply because it was imported later.
+    const chronological = [...existing, ...newForSymbol].sort((a, b) =>
+      a.tradeDate.localeCompare(b.tradeDate),
+    );
+    try {
+      calculateLedger(chronological);
+    } catch {
+      throw new Error(
+        `${symbol}: a venda supera a quantidade disponível na data. Inclua as compras anteriores ou revise as operações.`,
+      );
+    }
+  }
+  return {
+    additions,
+    assets,
+    importedIds,
+    duplicates,
+    warnings: [...warnings],
+  };
+}
+
+export async function previewInvestmentImport(
+  trades: ReviewedImportTrade[],
+): Promise<{
+  newCount: number;
+  duplicateCount: number;
+  warnings: string[];
+}> {
+  await migrateDatabase();
+  return serializeInvestmentImport(async () => {
+    const prepared = await prepareInvestmentImport(trades);
+    return {
+      newCount: prepared.additions.length,
+      duplicateCount: prepared.duplicates,
+      warnings: prepared.warnings,
+    };
+  });
+}
+
+/** Rechecks duplicates and positions while holding the write transaction; preview is never trusted. */
+export async function commitInvestmentImport(
+  trades: ReviewedImportTrade[],
+): Promise<{ imported: number; duplicates: number }> {
+  await migrateDatabase();
+  return serializeInvestmentImport(async () => {
+    const db = await getDatabase();
+    let result = { imported: 0, duplicates: 0 };
+    await db.withTransactionAsync(async () => {
+      const prepared = await prepareInvestmentImport(trades);
+      for (const [symbol, current] of prepared.assets) {
+        const additions = prepared.additions.filter(
+          (trade) => trade.symbol === symbol,
+        );
+        if (!additions.length) continue;
+        const first = additions[0]!;
+        const assetId =
+          current?.id ??
+          (await createAsset({
+            symbol,
+            name: first.name,
+            arcaClass: first.arcaClass,
+            assetType: first.assetType,
+            quoteMode: "API",
+            bucket: "LONG_TERM",
+          }));
+        const createdAt = Date.now();
+        for (const [index, trade] of additions.entries()) {
+          const id = Crypto.randomUUID();
+          await db.runAsync(
+            "INSERT INTO transactions(id,asset_id,type,trade_date,quantity,unit_price,fees,created_at) VALUES (?,?,?,?,?,?,?,?)",
+            id,
+            assetId,
+            trade.type,
+            trade.tradeDate,
+            trade.quantity,
+            trade.unitPrice,
+            trade.fees,
+            new Date(createdAt + index).toISOString(),
+          );
+          prepared.importedIds.set(id, trade.broker);
+        }
+        const latest = [...additions]
+          .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
+          .at(-1)!;
+        await saveQuote(
+          assetId,
+          latest.unitPrice,
+          "IMPORTED_TRANSACTION",
+          `${latest.tradeDate}T00:00:00.000Z`,
+        );
+      }
+      if (prepared.additions.length)
+        await setSetting(
+          importRegistryKey,
+          JSON.stringify(Object.fromEntries(prepared.importedIds)),
+        );
+      result = {
+        imported: prepared.additions.length,
+        duplicates: prepared.duplicates,
+      };
+    });
+    return result;
+  });
 }
 
 export async function loadPositions(

@@ -1,0 +1,14 @@
+Nubank
+Comprovante de compra
+Código do ativo
+PETR4
+Data da execução
+02/11/2026
+Tipo de operação
+Compra
+Quantidade executada
+3
+Preço médio
+32,45
+Custos
+0,05

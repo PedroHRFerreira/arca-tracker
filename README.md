@@ -48,3 +48,11 @@ Lembretes locais exigem uma instalação nativa com permissão de notificações
 ### Objetivos e orçamento guiados
 
 O planejamento oferece objetivos e prazos prontos, com alternativas personalizadas. Campos monetários usam máscara brasileira, com os dois últimos dígitos como centavos. Renda líquida menos despesas essenciais e demais compromissos define a sobra mensal, sem repetir despesas. O app sugere inicialmente metade da sobra e explica a margem deixada livre; a pessoa escolhe aplicar ou editar o valor. Aportes recorrentes acima da capacidade informada não podem ser ativados. Perfis antigos sem renda continuam disponíveis e podem ser complementados na revisão.
+
+### Importar comprovantes e negociações
+
+Em Carteira ou Configurações, **Importar comprovante ou extrato** abre o fluxo documento → conferência → confirmação. São aceitos CSV/Excel com uma tabela de negociações e PDFs com texto selecionável e campos estruturados. O app lê localmente, pede correção dos dados ambíguos e só grava após revisão. Custos desconhecidos precisam ser preenchidos ou confirmados como zero. Arquivos não reconhecidos, protegidos ou digitalizados não geram compras.
+
+A importação cobre compras e vendas de ações, ETFs e FIIs negociados na B3. Somente o catálogo verificado determina uma categoria automaticamente; outros ativos pedem classificação. Os registros de importação e sua corretora acompanham o backup; operações já existentes são verificadas por multiplicidade para evitar duplicação. Não há conexão automática com contas bancárias nesta entrega.
+
+No Android/iOS, a leitura de PDF usa o módulo local `modules/arca-document-reader` e exige nova instalação nativa; Expo Go não o inclui. Na web, PDF.js e seu worker são servidos pela própria aplicação. O `postinstall` prepara esses arquivos em `public`, sem CDN ou envio de comprovantes a terceiros. A preparação também pode ser refeita com `node apps/mobile/scripts/prepare-pdf-worker.cjs`.
