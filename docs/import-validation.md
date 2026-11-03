@@ -22,8 +22,12 @@ Os campos reconhecidos são editáveis e exigem confirmação de negociações r
 
 ## Validação nativa
 
-A exportação JavaScript não confirma a compilação Kotlin/Swift nem uma instalação física. A compilação do APK e conferência em aparelho precisam ser registradas separadamente. O APK 0.2.0 anterior não possui o novo módulo de PDF.
+A exportação JavaScript não confirma uma instalação física. A compilação Android foi concluída; a conferência em aparelho permanece uma etapa separada. O APK 0.2.0 anterior não possui o novo módulo de PDF.
 
-Compilação 0.3.0 (versionCode 3): [EAS 54fe6421](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/54fe6421-1813-48b8-b5fa-2c90fed96cba), iniciada com o commit `6cc9238`. Resultado nativo pendente. Não há aparelho Android ou iOS conectado para validar instalação, seletor nativo ou permissões nesta sessão.
+Compilação 0.3.0 (versionCode 3): [EAS 54fe6421](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/54fe6421-1813-48b8-b5fa-2c90fed96cba), iniciada com o commit `6cc9238`, terminou com sucesso em 02/11/2026 às 21h19 (America/Sao_Paulo). [APK gerado](https://expo.dev/artifacts/eas/rSpe8IXoEEQ61h98LzUnWfwiqe5drzbG_4p-1AcZ80s.apk).
+
+O APK foi baixado pela CLI oficial do EAS. A integridade do arquivo ZIP passou; as classes ArcaDocumentReaderModule/PDFBox e 19 recursos PDFBox estão presentes. O certificado do bloco de assinatura APK v2 é o mesmo da versão 0.2.0, permitindo a atualização com a identidade existente. Tamanho: 119,5 MiB.
+
+Não há aparelho Android ou iOS conectado para validar instalação, seletor nativo ou permissões nesta sessão. O módulo Swift não foi compilado. Não se declara compatibilidade com todo comprovante bancário nem validação física que não ocorreu.
 
 O [estudo de Open Finance](./open-finance-assessment.md) é uma avaliação separada; não adiciona uma integração bancária ao app.
