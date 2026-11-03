@@ -1,6 +1,6 @@
 # ARCA Tracker
 
-Aplicativo local-first para acompanhar uma carteira nos quatro quadrantes ARCA. Os dados pessoais ficam no SQLite do aparelho; o único serviço remoto é um proxy sem estado para cotações públicas.
+Aplicativo local-first para acompanhar uma carteira nos quatro quadrantes ARCA. O planejamento e a carteira ficam no SQLite do aparelho. Cotações usam um proxy público; a conexão bancária pessoal opcional usa um serviço privado separado, em modo de leitura.
 
 > Este software não oferece recomendação de investimento. Sugestões são rankings determinísticos sobre dados públicos e projeções são apenas estimativas configuráveis.
 
@@ -8,6 +8,7 @@ Aplicativo local-first para acompanhar uma carteira nos quatro quadrantes ARCA. 
 
 - `apps/mobile`: Expo/React Native, Android e iOS.
 - `apps/market-proxy`: Cloudflare Worker para brapi e Tesouro Transparente.
+- `apps/finance-proxy`: serviço privado de leitura das conexões pessoais Meu Pluggy.
 - `packages/domain`: cálculos financeiros puros e contratos compartilhados.
 
 ## Desenvolvimento
@@ -53,6 +54,16 @@ O planejamento oferece objetivos e prazos prontos, com alternativas personalizad
 
 Em Carteira ou Configurações, **Importar comprovante ou extrato** abre o fluxo documento → conferência → confirmação. São aceitos CSV/Excel com uma tabela de negociações e PDFs com texto selecionável e campos estruturados. O app lê localmente, pede correção dos dados ambíguos e só grava após revisão. Custos desconhecidos precisam ser preenchidos ou confirmados como zero. Arquivos não reconhecidos, protegidos ou digitalizados não geram compras.
 
-A importação cobre compras e vendas de ações, ETFs e FIIs negociados na B3. Somente o catálogo verificado determina uma categoria automaticamente; outros ativos pedem classificação. Os registros de importação e sua corretora acompanham o backup; operações já existentes são verificadas por multiplicidade para evitar duplicação. Não há conexão automática com contas bancárias nesta entrega.
+A importação cobre compras e vendas de ações, ETFs e FIIs negociados na B3. Somente o catálogo verificado determina uma categoria automaticamente; outros ativos pedem classificação. Os registros de importação e sua corretora acompanham o backup; operações já existentes são verificadas por multiplicidade para evitar duplicação. A conexão pessoal opcional está descrita abaixo; a importação por documento continua independente dela.
 
 No Android/iOS, a leitura de PDF usa o módulo local `modules/arca-document-reader` e exige nova instalação nativa; Expo Go não o inclui. Na web, PDF.js e seu worker são servidos pela própria aplicação. O `postinstall` prepara esses arquivos em `public`, sem CDN ou envio de comprovantes a terceiros. A preparação também pode ser refeita com `node apps/mobile/scripts/prepare-pdf-worker.cjs`.
+
+### Meus bancos — uso pessoal
+
+Em Carteira ou Configurações, **Meus bancos** consulta as conexões Nubank e Mercado Pago previamente autorizadas no Meu Pluggy. A primeira conexão usa uma chave pessoal guardada no SecureStore do aparelho; na prévia web ela dura apenas a sessão. O APK contém somente o endereço do serviço, nunca essa chave, Client Secret ou IDs das conexões.
+
+Saldos bancários, cartões e posições aparecem separados. Aplicações totalmente resgatadas não são posições atuais. A revisão permite importar operações completas de ações, ETFs e FIIs do catálogo; custos ausentes, moeda desconhecida, histórico incompleto e correções exigem revisão. IDs externos e conciliação econômica evitam repetir operações já registradas. A atualização automática da carteira é opcional e ocorre nas próximas consultas à tela; não é sincronização contínua em segundo plano. O Meu Pluggy atualiza a origem diariamente.
+
+Os exemplos do plano oferecem instruções verificadas por família e, no Android, um atalho para abrir Nubank ou Mercado Pago instalado. O usuário procura e confirma o produto no banco. Não há ordens automáticas nem garantia de que um exemplo esteja disponível para cada conta. Na web/iOS, o botão abre instruções claramente identificadas no site oficial.
+
+Configuração, privacidade e limites: [conexão pessoal](docs/open-finance-personal.md). Evidências e lacunas: [validação](docs/open-finance-validation.md).

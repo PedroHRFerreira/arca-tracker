@@ -1,6 +1,6 @@
 {
   "name": "@arca/mobile",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -25,6 +25,7 @@
     "expo-document-picker": "~56.0.4",
     "expo-file-system": "~56.0.8",
     "expo-font": "56.0.7",
+    "expo-intent-launcher": "~56.0.4",
     "expo-linking": "~56.0.15",
     "expo-modules-core": "~56.0.27",
     "expo-notifications": "~56.0.20",

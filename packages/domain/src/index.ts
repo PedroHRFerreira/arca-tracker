@@ -6,3 +6,5 @@ export * from './history';
 export * from './planning';
 export * from './catalog';
 export * from './imports';
+export * from './openFinance';
+export * from './banks';

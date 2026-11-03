@@ -1,6 +1,12 @@
 # Open Finance no ARCA — avaliação em 2 de novembro de 2026
 
-## Decisão
+## Atualização após a implementação
+
+A versão 0.4.0 implementa a conexão pessoal de leitura. As duas conexões autorizadas foram consultadas pelo serviço publicado em 02/11/2026. Não havia posições ativas nem novas operações retornadas nessa validação; uma compra futura real ainda precisa ser conferida. Os testes de operações usam exemplos sintéticos. Veja [configuração e limites](open-finance-personal.md) e [evidências de validação](open-finance-validation.md).
+
+O texto abaixo registra a avaliação anterior à implementação e suas condições; afirmações sobre implementação pendente referem-se à versão 0.3.0.
+
+## Decisão original
 
 Vale estudar uma integração pessoal pelo Meu Pluggy: existe uma modalidade oficialmente gratuita que se encaixa no uso das próprias contas. A sincronização **não está implementada nem validada no ARCA**. A versão 0.3.0 mantém importação local de documentos e cadastro manual, sem botão de conexão indisponível.
 

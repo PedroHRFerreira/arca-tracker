@@ -22,6 +22,7 @@ import { fetchMarketQuote } from "@/api/market";
 import { Card } from "@/components/ui";
 import { colors, money } from "@/theme";
 import { displayPlanDate } from "@/components/PlanSummary";
+import { BankActions } from "@/components/BankActions";
 
 export function AssetOptions({
   strategy = "ARCA",
@@ -155,7 +156,7 @@ function AssetOption({
             <Text style={styles.detailLabel}>
               Valor planejado para este grupo: {money(plannedAmount)}. Compare
               as opções; esse valor não é destinado integralmente a cada
-              exemplo.
+              exemplo e não representa seu preço de compra.
             </Text>
           )}
           <Detail label="Para que serve" value={entry.purpose} />
@@ -224,10 +225,15 @@ function AssetOption({
             </Text>
           )}
           {!!error && (
-            <Text accessibilityRole="alert" style={styles.error}>
+            <Text
+              accessibilityRole="alert"
+              accessibilityLiveRegion="polite"
+              style={styles.error}
+            >
               {error}
             </Text>
           )}
+          <BankActions entry={entry} />
         </View>
       )}
     </View>

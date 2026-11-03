@@ -6,7 +6,7 @@ O identificador Android é `com.pedro.arcatracker`. Mantenha o identificador e o
 
 ## APK para instalação no celular
 
-O perfil `preview` em `apps/mobile/eas.json` gera um APK de distribuição interna, sem cliente de desenvolvimento e sem depender do computador ou Expo Go. A versão visível desta entrega é 0.2.0. O EAS mantém e incrementa o código de versão Android remotamente.
+O perfil `preview` em `apps/mobile/eas.json` gera um APK de distribuição interna, sem cliente de desenvolvimento e sem depender do computador ou Expo Go. A versão visível desta entrega é 0.4.0. O EAS mantém e incrementa o código de versão Android remotamente.
 
 Na raiz do repositório:
 
@@ -23,6 +23,7 @@ As respostas e investimentos ficam no aparelho. Para transferir registros da pr�
 
 O build usa explicitamente o ambiente `preview` do EAS, com estas variáveis já cadastradas:
 
+- `EXPO_PUBLIC_FINANCE_PROXY_URL`: endereço HTTPS do serviço privado, sem chave pessoal embutida.
 - `EXPO_PUBLIC_MARKET_PROXY_URL`: endereço público HTTPS do serviço de cotações.
 - `EXPO_PUBLIC_ARCA_PROXY_TOKEN`: acesso ao proxy pessoal. Variáveis EXPO_PUBLIC são incorporadas ao aplicativo e não devem conter credenciais da brapi ou segredos administrativos.
 

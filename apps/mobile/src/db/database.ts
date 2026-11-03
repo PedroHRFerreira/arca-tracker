@@ -497,6 +497,29 @@ export async function saveQuote(
 }
 
 const importRegistryKey = "investment_import_transactions_v1";
+const externalImportRegistryKey = "finance_import_sources_v1";
+export type InvestmentImportOptions = { sourceKeys: string[] };
+type ExternalImportReference = { transactionId: string; fingerprint: string };
+
+function normalizeImportBroker(broker: string): string {
+  const normalized = broker.trim().replace(/\s+/g, " ").toUpperCase();
+  return ["NUBANK", "NU INVEST", "NUINVEST", "EASYNVEST"].includes(normalized)
+    ? "NUBANK" : normalized;
+}
+
+function externalTradeFingerprint(trade: ReviewedImportTrade): string {
+  return JSON.stringify([investmentTradeIdentity(trade), normalizeImportBroker(trade.broker), trade.arcaClass, trade.assetType]);
+}
+
+function readExternalImportRegistry(value: string | null): Map<string, ExternalImportReference> {
+  if (!value) return new Map();
+  const parsed: unknown = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+      Object.values(parsed).some((entry) => !entry || typeof entry !== "object" ||
+        typeof entry.transactionId !== "string" || typeof entry.fingerprint !== "string"))
+    throw new Error("O histórico da conexão está inválido. Restaure um backup válido.");
+  return new Map(Object.entries(parsed as Record<string, ExternalImportReference>));
+}
 let importQueue: Promise<unknown> = Promise.resolve();
 
 function serializeInvestmentImport<T>(operation: () => Promise<T>): Promise<T> {
@@ -532,12 +555,25 @@ type ImportLedgerRow = {
   createdAt: string;
 };
 
-async function prepareInvestmentImport(input: ReviewedImportTrade[]) {
+async function prepareInvestmentImport(input: ReviewedImportTrade[], options?: InvestmentImportOptions) {
   if (!input.length || input.length > 2000)
     throw new Error("Selecione entre 1 e 2.000 operações para importar.");
   const trades = input.map((trade) => ReviewedImportTradeSchema.parse(trade));
+  if (options && (options.sourceKeys.length !== trades.length ||
+      new Set(options.sourceKeys).size !== trades.length ||
+      options.sourceKeys.some((key) => typeof key !== "string" || !key.length || key.length > 1000)))
+    throw new Error("Identificadores de origem inválidos ou repetidos.");
+  const sourceKeys = new Map(trades.map((trade, index) => [trade, options?.sourceKeys[index]]));
   const db = await getDatabase();
   const importedIds = readImportRegistry(await getSetting(importRegistryKey));
+  const externalRefs = options ? readExternalImportRegistry(await getSetting(externalImportRegistryKey)) : new Map<string, ExternalImportReference>();
+  const linkedTransactionIds = new Set([...externalRefs.values()].map((reference) => reference.transactionId));
+  for (const trade of trades) {
+    const sourceKey = sourceKeys.get(trade);
+    const previous = sourceKey ? externalRefs.get(sourceKey) : undefined;
+    if (previous && previous.fingerprint !== externalTradeFingerprint(trade))
+      throw new Error(`${trade.symbol}: o provedor corrigiu uma operação já importada. Revise manualmente antes de sincronizar novamente.`);
+  }
   const additions: ReviewedImportTrade[] = [];
   const assets = new Map<string, Asset | null>();
   const warnings = new Set<string>();
@@ -595,20 +631,33 @@ async function prepareInvestmentImport(input: ReviewedImportTrade[]) {
     const newForSymbol: ReviewedImportTrade[] = [];
     for (const trade of group) {
       const candidates = matches.get(investmentTradeIdentity(trade)) ?? [];
-      const normalizeBroker = (broker: string) =>
-        broker.trim().replace(/\s+/g, " ").toUpperCase();
+      const sourceKey = sourceKeys.get(trade);
+      const previous = sourceKey ? externalRefs.get(sourceKey) : undefined;
+      if (previous) {
+        const index = candidates.findIndex((candidate) => candidate.id === previous.transactionId);
+        if (index < 0)
+          throw new Error(`${symbol}: a operação vinculada à conexão foi alterada ou removida. Revise manualmente antes de importar.`);
+        candidates.splice(index, 1);
+        duplicates++;
+        continue;
+      }
       const matchIndex = candidates.findIndex((candidate) => {
+        if (options && linkedTransactionIds.has(candidate.id)) return false;
         const broker = importedIds.get(candidate.id) ?? "";
         return (
           !broker ||
           !trade.broker ||
-          normalizeBroker(broker) === normalizeBroker(trade.broker)
+          normalizeImportBroker(broker) === normalizeImportBroker(trade.broker)
         );
       });
       const match =
         matchIndex < 0 ? undefined : candidates.splice(matchIndex, 1)[0];
       if (match) {
         duplicates++;
+        if (sourceKey) {
+          externalRefs.set(sourceKey, { transactionId: match.id, fingerprint: externalTradeFingerprint(trade) });
+          linkedTransactionIds.add(match.id);
+        }
         if (!importedIds.has(match.id))
           warnings.add(
             `${symbol}: uma operação idêntica já foi registrada manualmente ou veio de um backup antigo. Ela será ignorada para evitar duplicidade.`,
@@ -639,6 +688,8 @@ async function prepareInvestmentImport(input: ReviewedImportTrade[]) {
     additions,
     assets,
     importedIds,
+    sourceKeys,
+    externalRefs,
     duplicates,
     warnings: [...warnings],
   };
@@ -646,6 +697,7 @@ async function prepareInvestmentImport(input: ReviewedImportTrade[]) {
 
 export async function previewInvestmentImport(
   trades: ReviewedImportTrade[],
+  options?: InvestmentImportOptions,
 ): Promise<{
   newCount: number;
   duplicateCount: number;
@@ -653,7 +705,7 @@ export async function previewInvestmentImport(
 }> {
   await migrateDatabase();
   return serializeInvestmentImport(async () => {
-    const prepared = await prepareInvestmentImport(trades);
+    const prepared = await prepareInvestmentImport(trades, options);
     return {
       newCount: prepared.additions.length,
       duplicateCount: prepared.duplicates,
@@ -665,13 +717,14 @@ export async function previewInvestmentImport(
 /** Rechecks duplicates and positions while holding the write transaction; preview is never trusted. */
 export async function commitInvestmentImport(
   trades: ReviewedImportTrade[],
+  options?: InvestmentImportOptions,
 ): Promise<{ imported: number; duplicates: number }> {
   await migrateDatabase();
   return serializeInvestmentImport(async () => {
     const db = await getDatabase();
     let result = { imported: 0, duplicates: 0 };
     await db.withTransactionAsync(async () => {
-      const prepared = await prepareInvestmentImport(trades);
+      const prepared = await prepareInvestmentImport(trades, options);
       for (const [symbol, current] of prepared.assets) {
         const additions = prepared.additions.filter(
           (trade) => trade.symbol === symbol,
@@ -703,6 +756,8 @@ export async function commitInvestmentImport(
             new Date(createdAt + index).toISOString(),
           );
           prepared.importedIds.set(id, trade.broker);
+          const sourceKey = prepared.sourceKeys.get(trade);
+          if (sourceKey) prepared.externalRefs.set(sourceKey, { transactionId: id, fingerprint: externalTradeFingerprint(trade) });
         }
         const latest = [...additions]
           .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
@@ -719,6 +774,8 @@ export async function commitInvestmentImport(
           importRegistryKey,
           JSON.stringify(Object.fromEntries(prepared.importedIds)),
         );
+      if (options)
+        await setSetting(externalImportRegistryKey, JSON.stringify(Object.fromEntries(prepared.externalRefs)));
       result = {
         imported: prepared.additions.length,
         duplicates: prepared.duplicates,

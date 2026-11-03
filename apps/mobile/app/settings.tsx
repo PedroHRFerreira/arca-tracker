@@ -32,6 +32,7 @@ import {
   setSetting,
 } from "@/db/database";
 import { getProxyToken, setProxyToken } from "@/api/market";
+import { FINANCE_SERVICE_AVAILABLE } from "@/api/finance";
 import { useApp } from "@/providers/AppProvider";
 import { colors } from "@/theme";
 import {
@@ -368,6 +369,21 @@ export default function Settings() {
             onPress={() => router.push("/import-investments")}
           />
         </Card>
+        {FINANCE_SERVICE_AVAILABLE && (
+          <Card style={styles.card}>
+            <Text style={styles.section}>Meus bancos</Text>
+            <Text style={styles.hint}>
+              Gerencie suas conexões e consulte saldos e investimentos dos
+              bancos. Esses valores ficam separados da carteira que você
+              registrou no app.
+            </Text>
+            <Button
+              title="Abrir meus bancos"
+              variant="secondary"
+              onPress={() => router.push("/banks")}
+            />
+          </Card>
+        )}
         <Card style={styles.card}>
           <Text style={styles.section}>Seus dados ficam com você</Text>
           <Text style={styles.hint}>

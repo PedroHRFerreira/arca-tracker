@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "arca-finance-proxy",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": false },
+  "vars": { "ALLOWED_ORIGINS": "http://localhost:8083,http://localhost:8084" }
+}

@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ARCA_LABELS } from "@arca/domain";
 import { Button, Card, ScreenHeader } from "@/components/ui";
+import { FINANCE_SERVICE_AVAILABLE } from "@/api/finance";
 import { useApp } from "@/providers/AppProvider";
 import { arcaColors, colors, money, layout } from "@/theme";
 
@@ -23,6 +24,21 @@ export default function Assets() {
             comprovante ou registre a movimentação para acompanhar os valores.
           </Text>
         </Card>
+        {FINANCE_SERVICE_AVAILABLE && (
+          <Card style={{ marginTop: 18 }}>
+            <Text style={styles.infoTitle}>Meus bancos</Text>
+            <Text style={styles.text}>
+              Consulte saldos e investimentos dos seus bancos. Esses valores
+              ficam separados dos investimentos registrados nesta carteira.
+            </Text>
+            <View style={{ height: 16 }} />
+            <Button
+              title="Ver meus bancos"
+              variant="secondary"
+              onPress={() => router.push("/banks")}
+            />
+          </Card>
+        )}
         {!assets.length && (
           <Card style={{ marginTop: 18 }}>
             <Text style={styles.heading}>

@@ -66,6 +66,10 @@ function AppStack() {
       />
       <Stack.Screen name="settings" options={{ presentation: "card" }} />
       <Stack.Screen
+        name="banks"
+        options={{ presentation: "card", title: "Meus bancos" }}
+      />
+      <Stack.Screen
         name="import-investments"
         options={{ presentation: "card" }}
       />
