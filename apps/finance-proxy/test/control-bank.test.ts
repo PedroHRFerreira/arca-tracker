@@ -27,6 +27,16 @@ function provider(overrides: Overrides = {}) {
 }
 
 describe('private control bank adapter', () => {
+  it('preserves BRL bills and balances when a posted foreign purchase is already included in an identified BRL bill', async () => {
+    const result = await loadControlBankImport(credentials, provider({ movements: { 'credit-account': [movement('credit-account', { currencyCode: 'USD', creditCardMetadata: { billId: 'bill-1' } })] } }), { now });
+    expect(result.connections[0]?.status).toBe('UPDATED');
+    expect(result.accounts).toHaveLength(1); expect(result.cards).toHaveLength(1); expect(result.bills).toHaveLength(1);
+    expect(result.transactions).toEqual([]); expect(result.warnings.join(' ')).toContain('outra moeda');
+  });
+  it('blocks a foreign purchase when its actual BRL bill is unavailable', async () => {
+    const result = await loadControlBankImport(credentials, provider({ bills: [], movements: { 'credit-account': [movement('credit-account', { currencyCode: 'USD', creditCardMetadata: { billId: 'unknown-bill' } })] } }), { now });
+    expect(result.connections[0]?.status).toBe('ERROR'); expect(result.accounts).toEqual([]);
+  });
   it('keeps dated cash anchors and card limits separate, and removes private identities', async () => {
     const result = await loadControlBankImport(credentials, provider(), { now });
     expect(result.accounts[0]).toMatchObject({ balanceCents: 4071, observedAt: '2026-11-03T12:00:00.000Z' });

@@ -147,6 +147,7 @@ export async function loadControlBankImport(
     const connection: BankControlImport['connections'][number] = { ...configured, status: 'ERROR', updatedAt: null, accountsComplete: false, transactionsComplete: false, billsComplete: false };
     result.connections.push(connection);
     const staged: Pick<BankControlImport, 'accounts' | 'cards' | 'transactions' | 'bills'> = { accounts: [], cards: [], transactions: [], bills: [] };
+    const foreignCardBills = new Set<string>();
     try {
       const item = await call(`/items/${encodeURIComponent(configured.id)}`, key);
       if (item.id !== configured.id || row(item.connector).name !== 'MeuPluggy') throw new ProviderError('PROVIDER_WRONG_CONNECTOR');
@@ -170,8 +171,15 @@ export async function loadControlBankImport(
         }
         for (const movement of await transactions(externalId)) {
           const externalMovementId = text(movement.id), providerId = text(movement.providerId), movementDate = date(movement.date), amountCents = cents(movement.amount, true);
-          if (!externalMovementId || movement.accountId !== externalId || movement.currencyCode !== 'BRL' || !movementDate || amountCents === null || !['PENDING', 'POSTED'].includes(String(movement.status)) || !['CREDIT', 'DEBIT'].includes(String(movement.type))) throw new ProviderError('PROVIDER_RESPONSE');
+          if (!externalMovementId || movement.accountId !== externalId || !movementDate || amountCents === null || !['PENDING', 'POSTED'].includes(String(movement.status)) || !['CREDIT', 'DEBIT'].includes(String(movement.type))) throw new ProviderError('PROVIDER_RESPONSE');
           const operationType = text(movement.operationType, 100), metadata = row(movement.creditCardMetadata);
+          if (movement.currencyCode !== 'BRL') {
+            const foreignBill = text(metadata.billId);
+            if (kind !== 'CREDIT' || movement.status !== 'POSTED' || !foreignBill || !/^[A-Z]{3}$/.test(String(movement.currencyCode))) throw new ProviderError('PROVIDER_RESPONSE');
+            // The BRL invoice remains authoritative. Never invent an exchange rate or replay a foreign amount as BRL.
+            foreignCardBills.add(id(configured.id, `bill:${externalId}`, foreignBill));
+            continue;
+          }
           const payment = row(movement.paymentData), payer = text(row(row(payment.payer).documentNumber).value), receiver = text(row(row(payment.receiver).documentNumber).value);
           const ownTransfer = payer !== null && receiver !== null && payer.replace(/\D/g, '') !== '' && payer.replace(/\D/g, '') === receiver.replace(/\D/g, '');
           const cardPayment = ['PAGAMENTO_FATURA', ...(kind === 'CREDIT' ? ['PAGAMENTO'] : [])].includes(operationType ?? '');
@@ -196,6 +204,8 @@ export async function loadControlBankImport(
           staged.bills.push({ id: billId, externalId: billExternalId, connectionId: configured.id, cardId: accountId, dueDate, closingDate: date(bill.billClosingDate), totalCents, minimumPaymentCents: cents(bill.minimumPaymentAmount), reportedPayments: unique(reportedPayments), financeCharges: unique(financeCharges) });
         }
       }
+      if ([...foreignCardBills].some(billId => !staged.bills.some(bill => bill.id === billId))) throw new ProviderError('PROVIDER_RESPONSE');
+      if (foreignCardBills.size) result.warnings.push(`${label(configured)}: há compras em outra moeda já incluídas em faturas em reais. Os itens estrangeiros não foram convertidos nem importados; confira a composição no banco.`);
       connection.accountsComplete = connection.transactionsComplete = connection.billsComplete = true;
       for (const collection of ['accounts', 'cards', 'transactions', 'bills'] as const) (result[collection] as BankEntity[]).push(...unique<BankEntity>(staged[collection]));
       if (!staged.cards.length) result.warnings.push(`${label(configured)}: nenhum cartão foi disponibilizado pela conexão. Cadastre as faturas manualmente.`);

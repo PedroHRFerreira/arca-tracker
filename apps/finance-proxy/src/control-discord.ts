@@ -1,11 +1,11 @@
-import { calculateControlSummary, projectControlMonths, ControlIncomeSchema, ControlExpenseSchema, ControlPaymentSchema, type ControlCommand, type ControlState } from '@arca/domain';
+import { calculateControlSummary, projectControlMonths, controlMovementsForMonth, ControlDateSchema, ControlIncomeSchema, ControlExpenseSchema, ControlPaymentSchema, type ControlCommand, type ControlState } from '@arca/domain';
 import { commitControlCommand, consumeControlToken, CONTROL_OWNER, issueControlToken, readControlState, readDiscordConnection } from './control-store';
 
 export type DiscordConfig = { DB?: D1Database; DISCORD_PUBLIC_KEY?: string; DISCORD_BOT_TOKEN?: string; DISCORD_APPLICATION_ID?: string };
 export function discordConfigured(env: DiscordConfig): boolean {
   return Boolean(env.DB && /^[a-f0-9]{64}$/i.test(env.DISCORD_PUBLIC_KEY ?? '') && /^\d{15,22}$/.test(env.DISCORD_APPLICATION_ID ?? '') && env.DISCORD_BOT_TOKEN);
 }
-type Option = { name: string; value?: string | number; options?: Option[] };
+type Option = { name: string; value?: string | number | boolean; options?: Option[] };
 type Interaction = { type: number; id: string; token?: string; channel_id?: string; context?: number; guild_id?: string; user?: { id: string }; member?: { user: { id: string } }; data?: { name?: string; custom_id?: string; options?: Option[] } };
 const money = (cents: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
 const safe = (value: string) => value.replaceAll('@', '＠').replaceAll('`', '′').replaceAll('*', '∗').replaceAll('_', '＿');
@@ -124,6 +124,7 @@ export async function handleDiscord(request: Request, env: DiscordConfig, ctx?: 
     const amountCents = parseCents(opts.valor ?? '');
     if (amountCents <= 0) return reply('Informe um valor maior que zero.');
     const date = opts.data || today;
+    if (!ControlDateSchema.safeParse(date).success || date > today) return reply('Informe a data efetiva no formato AAAA-MM-DD. Datas futuras devem ser cadastradas como previsão no aplicativo.');
     const accountId = opts.conta ?? null;
     if (!accountId || !state.accounts.some(account => account.id === accountId && !account.cancelled))
       return reply(`Informe o identificador da conta cadastrada: ${state.accounts.filter(account => !account.cancelled).map(account => `${safe(account.name)}: \`${safe(account.id)}\``).join('; ') || 'cadastre uma conta no aplicativo'}.`);
@@ -134,14 +135,22 @@ export async function handleDiscord(request: Request, env: DiscordConfig, ctx?: 
     if (name === 'pagar') {
       const bill = state.bills.find(row => row.id === opts.fatura && !row.cancelled);
       if (!bill) return reply(`Informe a fatura: ${state.bills.filter(row => !row.cancelled).slice(0, 10).map(row => `${row.month}: \`${safe(row.id)}\``).join('; ') || 'sem faturas cadastradas'}.`);
-      const entity = ControlPaymentSchema.parse({ id, source: 'DISCORD', externalId: input.id, billId: bill.id, amountCents, paidDate: date, paidAt: createdAt, accountId, confirmed: true });
+      if (opts.novo !== 'true' && state.payments.some(row => !row.cancelled && row.confirmed && row.billId === bill.id && row.accountId === accountId && row.paidDate === date && row.amountCents === amountCents))
+        return reply('Já existe um pagamento com esses dados. Confira no aplicativo. Use a opção novo somente se forem dois pagamentos distintos.');
+      const entity = ControlPaymentSchema.parse({ id, source: 'DISCORD', externalId: input.id, billId: bill.id, amountCents, paidDate: date, paidAt: date === today ? createdAt : null, accountId, confirmed: true });
       command = { id, baseRevision: state.revision, createdAt, type: 'UPSERT', collection: 'payments', entity };
       description = `Pagamento de fatura: ${money(amountCents)}, em ${date}. A compra não será contabilizada novamente.`;
     } else {
       const income = opts.tipo === 'receita';
       if (!income && opts.tipo !== 'despesa') return reply('Escolha receita ou despesa.');
-      const entity = (income ? ControlIncomeSchema : ControlExpenseSchema).parse({ id, name: opts.descricao, amountCents, dueDate: date, settledDate: date, settledAt: createdAt,
-        accountId, source: 'DISCORD', externalId: input.id, status: 'SETTLED', verification: 'CONFIRMED' });
+      const collection = income ? 'incomes' : 'expenses';
+      const occurrences = controlMovementsForMonth(state, date.slice(0, 7))[collection];
+      const existing = opts.lancamento ? [...state[collection], ...occurrences].find(row => row.id === opts.lancamento && !row.cancelled && row.status === 'EXPECTED') : undefined;
+      if (opts.lancamento && !existing) return reply('A previsão não foi encontrada ou já foi confirmada. Confira o lançamento no aplicativo.');
+      const candidates = occurrences.filter(row => row.amountCents === amountCents && row.dueDate === date && !row.cancelled);
+      if (!existing && opts.novo !== 'true' && candidates.length) return reply(`Há lançamentos com esse valor e data. Para confirmar uma previsão, informe lancamento: ${candidates.slice(0, 5).map(row => `\`${safe(row.id)}\``).join(', ')}. Use novo apenas para outro lançamento distinto.`);
+      const entity = (income ? ControlIncomeSchema : ControlExpenseSchema).parse({ ...(existing ?? {}), id: existing?.id ?? id, name: existing?.name ?? opts.descricao, amountCents, dueDate: existing?.dueDate ?? date, settledDate: date, settledAt: date === today ? createdAt : null,
+        ...(income ? { kind: opts.natureza ?? existing?.kind ?? 'EXTRA' } : {}), accountId, source: 'DISCORD', externalId: input.id, status: 'SETTLED', verification: 'CONFIRMED' });
       command = { id, baseRevision: state.revision, createdAt, type: 'UPSERT', collection: income ? 'incomes' : 'expenses', entity };
       description = `${income ? 'Receita recebida' : 'Despesa paga'}: ${safe(entity.name)}, ${money(amountCents)}, em ${date}.`;
     }
@@ -166,11 +175,15 @@ export const discordCommands = [
     { type: 3, name: 'valor', description: 'Valor em reais, exemplo 125,50', required: true },
     { type: 3, name: 'descricao', description: 'Descrição', required: true }, { type: 3, name: 'conta', description: 'Identificador da conta mostrado no aplicativo', required: true },
     { type: 3, name: 'data', description: 'Data AAAA-MM-DD, padrão hoje', required: false },
+    { type: 3, name: 'natureza', description: 'Para receitas: salário, 13º ou outra entrada', required: false, choices: [{ name: 'Salário', value: 'SALARY' }, { name: '13º salário', value: 'THIRTEENTH' }, { name: 'Outra receita', value: 'EXTRA' }] },
+    { type: 3, name: 'lancamento', description: 'Identificador da previsão a confirmar, sem criar outra receita ou despesa', required: false },
+    { type: 5, name: 'novo', description: 'Confirmar que é outro lançamento mesmo com valor e data iguais', required: false },
   ] },
   { name: 'pagar', description: 'Conferir e confirmar pagamento de uma fatura', contexts: [1], options: [
     { type: 3, name: 'fatura', description: 'Identificador da fatura mostrado no aplicativo', required: true },
     { type: 3, name: 'valor', description: 'Valor efetivamente pago, exemplo 125,50', required: true },
     { type: 3, name: 'conta', description: 'Identificador da conta que fez o pagamento', required: true },
     { type: 3, name: 'data', description: 'Data AAAA-MM-DD, padrão hoje', required: false },
+    { type: 5, name: 'novo', description: 'Confirmar que é outro pagamento mesmo com valor e data iguais', required: false },
   ] },
 ];

@@ -103,4 +103,24 @@ describe('Discord owner privacy and confirmation', () => {
     expect((await readControlState(db)).incomes).toHaveLength(1);
     expect((await readControlState(db)).incomes[0]!.amountCents).toBe(1234);
   });
+  it('links a salary receipt to its forecast and rejects duplicate or future receipts', async () => {
+    await commitControlCommand(db, mutation());
+    await commitControlCommand(db, { id: 'salary-forecast', baseRevision: 1, createdAt: now, type: 'UPSERT', collection: 'incomes', entity: { id: 'expected-salary', name: 'Salário previsto', kind: 'SALARY', amountCents: 12500, dueDate: '2026-05-20', accountId: 'account-one' } } as ControlCommand);
+    await db.prepare('INSERT INTO discord_connection(owner,user_id,channel_id,linked_at) VALUES(?,?,?,?)').bind('personal', 'owner', 'channel', now).run();
+    const interaction = { type: 2, id: 'salary-received', context: 1, user: { id: 'owner' }, channel_id: 'channel', data: { name: 'registrar', options: [{ name: 'tipo', value: 'receita' }, { name: 'valor', value: '125,00' }, { name: 'descricao', value: 'Salário' }, { name: 'conta', value: 'account-one' }, { name: 'data', value: '2026-05-20' }, { name: 'lancamento', value: 'expected-salary' }] } };
+    let input = await signed(interaction);
+    const preview = await (await handleDiscord(input.request, input.env)).json() as { data: { components: { components: { custom_id: string }[] }[] } };
+    const confirm = preview.data.components[0]!.components[0]!.custom_id;
+    input = await signed({ ...interaction, type: 3, id: 'salary-confirm', data: { custom_id: confirm } });
+    expect(JSON.stringify(await (await handleDiscord(input.request, input.env)).json())).toContain('Registro confirmado');
+    const state = await readControlState(db);
+    expect(state.incomes).toHaveLength(1);
+    expect(state.incomes[0]).toMatchObject({ id: 'expected-salary', kind: 'SALARY', status: 'SETTLED', settledAt: null });
+    const options = interaction.data.options.filter(row => row.name !== 'lancamento');
+    input = await signed({ ...interaction, id: 'salary-repeat', data: { name: 'registrar', options } });
+    expect(JSON.stringify(await (await handleDiscord(input.request, input.env)).json())).toContain('Há lançamentos');
+    input = await signed({ ...interaction, id: 'future-receipt', data: { name: 'registrar', options: options.map(row => row.name === 'data' ? { ...row, value: '2999-01-01' } : row) } });
+    expect(JSON.stringify(await (await handleDiscord(input.request, input.env)).json())).toContain('Datas futuras');
+    expect((await readControlState(db)).revision).toBe(state.revision);
+  });
 });
