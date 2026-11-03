@@ -114,7 +114,9 @@ export default function Banks() {
     const nextPreview = await previewFinanceImport(result.snapshot);
     if (!current(token)) return;
     setPreview(nextPreview);
-    setMessage(`Dados atualizados. ${result.imported} operações adicionadas, ${result.duplicates} já registradas e ${result.pending} pendentes de revisão.`);
+    setMessage(result.imported > 0
+      ? `Consulta concluída. ${result.imported} operações adicionadas, ${result.duplicates} já registradas e ${nextPreview.pending} pendentes de revisão.`
+      : `Consulta concluída. ${nextPreview.newCount} operações para revisar, ${nextPreview.duplicateCount} já registradas e ${nextPreview.pending} pendentes.`);
     if (result.imported > 0) {
       try { await refresh(); }
       catch {
@@ -260,7 +262,8 @@ export default function Banks() {
   const totals = snapshot ? getFinanceTotals(snapshot) : null;
   const hasBankBalance = snapshot?.accounts.some((item) => item.kind === "BANK" && item.currency === "BRL");
   const hasCreditBalance = snapshot?.accounts.some((item) => item.kind === "CREDIT" && item.currency === "BRL");
-  const brlInvestments = snapshot?.investments.filter((item) => item.currency === "BRL") ?? [];
+  const currentInvestments = snapshot?.investments.filter((item) => item.status !== "WITHDRAWN") ?? [];
+  const brlInvestments = currentInvestments.filter((item) => item.currency === "BRL");
   const knownInvestmentValues = brlInvestments.filter((item) => item.value !== null).length;
   const partialInvestmentValue = knownInvestmentValues > 0 && knownInvestmentValues < brlInvestments.length;
   const prepared = snapshot ? prepareFinanceTrades(snapshot) : null;
@@ -350,8 +353,8 @@ export default function Banks() {
             <Card style={styles.card}>
               <Text style={styles.section}>Investimentos no banco</Text>
               <Text style={styles.hint}>Uma consulta das posições informadas pelo banco. Ter um investimento nesta lista não registra uma compra no ARCA.</Text>
-              {snapshot.investments.length === 0 && <Text style={styles.body}>Nenhum investimento foi informado nesta consulta. A disponibilidade depende do banco e das suas autorizações.</Text>}
-              {snapshot.investments.map((investment) => <View key={investment.id} style={styles.row}>
+              {currentInvestments.length === 0 && <Text style={styles.body}>Nenhum investimento foi informado nesta consulta. A disponibilidade depende do banco e das suas autorizações.</Text>}
+              {currentInvestments.map((investment) => <View key={investment.id} style={styles.row}>
                 <Text style={styles.label}>{investment.name}</Text>
                 <Text style={styles.body}>{investmentLabels[investment.type]} · {investment.currency}</Text>
                 <Text style={styles.amount}>{investment.value === null ? "Valor não informado" : formatMoney(investment.value, investment.currency)}</Text>

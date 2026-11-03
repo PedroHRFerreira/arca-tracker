@@ -128,9 +128,9 @@ export async function loadPersonalSnapshot(
         continue;
       }
       for (const investment of investments) {
-        if (investment.status === 'TOTAL_WITHDRAWAL') { warnings.add(`${name}: aplicações totalmente resgatadas não compõem as posições atuais. Para operações antigas, use o extrato.`); continue; }
+        if (investment.status === 'TOTAL_WITHDRAWAL') warnings.add(`${name}: aplicações totalmente resgatadas ficam fora das posições atuais; suas compras e vendas continuam disponíveis para revisão.`);
         if (investment.status === 'PENDING') { warnings.add(`${name}: uma aplicação pendente não foi tratada como concluída.`); continue; }
-        if (investment.status !== 'ACTIVE') { connection.status = 'ERROR'; warnings.add(`${name}: uma aplicação sem situação confirmada não foi incluída.`); continue; }
+        if (!['ACTIVE', 'TOTAL_WITHDRAWAL'].includes(String(investment.status))) { connection.status = 'ERROR'; warnings.add(`${name}: uma aplicação sem situação confirmada não foi incluída.`); continue; }
         const investmentId = text(investment.id, 200), code = currency(investment.currencyCode), investmentName = text(investment.name);
         if (!investmentId || !code || !investmentName) { connection.status = 'ERROR'; warnings.add(`${name}: um investimento com dados incompletos foi separado para revisão no banco.`); continue; }
         if (investment.itemId !== configured.id) throw new ProviderError('PROVIDER_RESPONSE');
@@ -138,7 +138,7 @@ export async function loadPersonalSnapshot(
         const symbolText = text(investment.code, 32)?.toUpperCase() ?? null;
         const position: FinanceSnapshot['investments'][number] = {
           id: investmentId, connectionId: configured.id, symbol: symbolText && /^[A-Z]{4}\d{1,2}$/.test(symbolText) ? symbolText : null,
-          name: investmentName, type, quantity: amount(investment.quantity), unitPrice: amount(investment.value), value: amount(investment.balance), currency: code,
+          name: investmentName, type, status: investment.status === 'TOTAL_WITHDRAWAL' ? 'WITHDRAWN' : 'ACTIVE', quantity: amount(investment.quantity), unitPrice: amount(investment.value), value: amount(investment.balance), currency: code,
           updatedAt: timestamp(investment.date),
         };
         snapshot.investments.push(position);

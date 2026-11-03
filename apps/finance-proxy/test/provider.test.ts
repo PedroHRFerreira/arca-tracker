@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { prepareFinanceTrades } from '@arca/domain';
+import { prepareFinanceTrades, getFinanceTotals } from '@arca/domain';
 import { loadPersonalSnapshot } from '../src/provider';
 import worker from '../src/index';
 
@@ -47,17 +47,25 @@ describe('personal normalized bank data', () => {
     const result = await loadPersonalSnapshot({ clientId: 'client', clientSecret: 'secret', items: [item] }, provider({ pages: true }));
     expect(result.trades.map(trade => trade.id)).toEqual(['trade-1', 'trade-2']);
   });
-  it('does not display fully withdrawn applications as current holdings or reconstruct old trades', async () => {
+  it('keeps fully withdrawn history available without counting it as current holdings', async () => {
     const base = provider();
     const fetcher: typeof fetch = async (input, init) => {
       const response = await base(input, init);
+      if (String(input).includes('/transactions')) {
+        const body = await response.json() as { results: Record<string, unknown>[] };
+        body.results.push({ ...body.results[0]!, id: 'full-sale', type: 'SELL' });
+        return Response.json(body);
+      }
       if (new URL(String(input)).pathname !== '/investments') return response;
       const body = await response.json() as { results: Record<string, unknown>[] };
       body.results[0]!.status = 'TOTAL_WITHDRAWAL';
       return Response.json(body);
     };
     const result = await loadPersonalSnapshot({ clientId: 'client', clientSecret: 'secret', items: [item] }, fetcher);
-    expect(result.investments).toEqual([]); expect(result.trades).toEqual([]);
+    expect(result.investments[0]?.status).toBe('WITHDRAWN');
+    expect(getFinanceTotals(result).investmentsValue).toBe('0');
+    expect(result.trades).toHaveLength(2);
+    expect(prepareFinanceTrades(result).eligible).toHaveLength(2);
     expect(result.connections[0]?.status).toBe('UPDATED');
   });
   it('blocks automatic import when pagination omits a later sale', async () => {

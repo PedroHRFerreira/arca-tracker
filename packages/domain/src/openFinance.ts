@@ -32,6 +32,8 @@ export const FinanceSnapshotSchema = z.object({
   investments: z.array(z.object({
     id, connectionId: id, symbol: z.string().trim().min(1).max(32).nullable(), name,
     type: z.enum(["EQUITY", "ETF", "FII", "FIXED_INCOME", "FUND", "OTHER"]),
+    // Optional for previously saved snapshots. Withdrawn positions retain their trade references.
+    status: z.enum(["ACTIVE", "WITHDRAWN"]).optional(),
     quantity: decimal().nullable(), unitPrice: decimal().nullable(), value: decimal().nullable(),
     currency, updatedAt: timestamp.nullable(),
   }).strict()).max(5000),
@@ -73,7 +75,8 @@ export function prepareFinanceTrades(input: FinanceSnapshot): {
   const snapshot = FinanceSnapshotSchema.parse(input);
   const investments = new Map(snapshot.investments.map((item) => [item.id, item]));
   const connections = new Map(snapshot.connections.map((item) => [item.id, item]));
-  const eligible: { sourceKey: string; trade: ReviewedImportTrade }[] = [];
+  const eligible: { sourceKey: string; trade: ReviewedImportTrade; investmentId: string }[] = [];
+  const incomplete = new Set<string>();
   const warnings = new Set(snapshot.warnings);
   let pending = 0;
   for (const row of snapshot.trades) {
@@ -84,6 +87,7 @@ export function prepareFinanceTrades(input: FinanceSnapshot): {
         catalog.assetType === "TREASURY" || catalog.assetType !== investment.type ||
         connection.institution === "OTHER" || connection.status !== "UPDATED") {
       pending++;
+      incomplete.add(investment.id);
       warnings.add(`${investment.name}: operação pendente de revisão (conexão, código, categoria, instituição, moeda ou taxas sem confirmação).`);
       continue;
     }
@@ -95,12 +99,27 @@ export function prepareFinanceTrades(input: FinanceSnapshot): {
     });
     if (!parsed.success) {
       pending++;
+      incomplete.add(investment.id);
       warnings.add(`${investment.name}: operação pendente de revisão da data ou dos valores.`);
       continue;
     }
-    eligible.push({ sourceKey: JSON.stringify(["pluggy", row.connectionId, row.id]), trade: parsed.data });
+    eligible.push({ sourceKey: JSON.stringify(["pluggy", row.connectionId, row.id]), trade: parsed.data, investmentId: investment.id });
   }
-  return { eligible, pending, warnings: [...warnings] };
+  // Import an investment's confirmed history together. Otherwise a pending sale could leave a false holding.
+  const ExactDecimal = Decimal.clone({ precision: 80 });
+  for (const investment of snapshot.investments) {
+    if (investment.status !== "WITHDRAWN") continue;
+    const delta = snapshot.trades.filter(row => row.investmentId === investment.id)
+      .reduce((sum, row) => row.type === "BUY" ? sum.plus(row.quantity) : sum.minus(row.quantity), new ExactDecimal(0));
+    if (delta.gt(0)) incomplete.add(investment.id);
+  }
+  const confirmed = eligible.filter(item => {
+    if (!incomplete.has(item.investmentId)) return true;
+    pending++;
+    warnings.add(`${investments.get(item.investmentId)!.name}: revise o histórico completo deste investimento antes de importar parte das compras e vendas.`);
+    return false;
+  }).map(({ sourceKey, trade }) => ({ sourceKey, trade }));
+  return { eligible: confirmed, pending, warnings: [...warnings] };
 }
 
 /** Informational totals. Never add these provider positions to the ARCA ledger holdings. */
@@ -113,6 +132,6 @@ export function getFinanceTotals(input: FinanceSnapshot): {
   return {
     bankBalance: total(snapshot.accounts.filter((item) => item.kind === "BANK" && item.currency === "BRL").map((item) => item.balance)),
     creditBalance: total(snapshot.accounts.filter((item) => item.kind === "CREDIT" && item.currency === "BRL").map((item) => item.balance)),
-    investmentsValue: total(snapshot.investments.filter((item) => item.currency === "BRL" && item.value !== null).map((item) => item.value!)),
+    investmentsValue: total(snapshot.investments.filter((item) => item.status !== "WITHDRAWN" && item.currency === "BRL" && item.value !== null).map((item) => item.value!)),
   };
 }

@@ -29,6 +29,25 @@ describe("read-only finance snapshot", () => {
     expect(prepareFinanceTrades(input)).toMatchObject({ pending: 1, eligible: [] });
   });
 
+  it("retains full-sale transactions without counting the withdrawn position as current value", () => {
+    const input = snapshot(); input.investments[0]!.status = "WITHDRAWN";
+    input.trades.push({ ...input.trades[0]!, id: "synthetic-sale", type: "SELL", tradeDate: "2025-01-11" });
+    expect(getFinanceTotals(input).investmentsValue).toBe("0");
+    expect(prepareFinanceTrades(input)).toMatchObject({ pending: 0 });
+    expect(prepareFinanceTrades(input).eligible).toHaveLength(2);
+  });
+
+  it("does not create a ghost holding when a withdrawn investment is missing its sale", () => {
+    const input = snapshot(); input.investments[0]!.status = "WITHDRAWN";
+    expect(prepareFinanceTrades(input)).toMatchObject({ eligible: [], pending: 1 });
+  });
+
+  it("does not import a buy while a sale from the same investment has unknown fees", () => {
+    const input = snapshot();
+    input.trades.push({ ...input.trades[0]!, id: "synthetic-pending-sale", type: "SELL", fees: null });
+    expect(prepareFinanceTrades(input)).toMatchObject({ eligible: [], pending: 2 });
+  });
+
   it("never generates a purchase from an investment position", () => {
     const input = snapshot();
     input.trades = [];

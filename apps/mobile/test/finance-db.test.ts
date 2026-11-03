@@ -52,6 +52,21 @@ describe("finance SQLite imports", () => {
     expect((await db.exportDatabaseJson()).tables.transactions).toHaveLength(1);
   });
 
+  it("records a full sale after the provider marks the position withdrawn, without repeating the buy", async () => {
+    await finance.commitFinanceImport(snapshot());
+    const sold = snapshot(); sold.investments[0]!.status = "WITHDRAWN";
+    sold.trades.push({ ...sold.trades[0]!, id: "synthetic-sale", type: "SELL", tradeDate: "2025-01-11", unitPrice: "32" });
+    expect(await finance.previewFinanceImport(sold)).toMatchObject({ newCount: 1, duplicateCount: 1 });
+    expect(await finance.commitFinanceImport(sold)).toMatchObject({ imported: 1, duplicates: 1 });
+    const rows = (await db.exportDatabaseJson()).tables.transactions;
+    expect(rows).toEqual([expect.objectContaining({ type: "BUY" }), expect.objectContaining({ type: "SELL" })]);
+    const position = sql.exec("SELECT SUM(CASE WHEN type = 'BUY' THEN CAST(quantity AS REAL) ELSE -CAST(quantity AS REAL) END) FROM transactions");
+    expect(position[0]!.values[0]![0]).toBe(0);
+    await finance.saveFinanceSnapshot(sold);
+    expect((await finance.loadFinanceSnapshot())?.investments[0]?.status).toBe("WITHDRAWN");
+    expect(await finance.commitFinanceImport(sold)).toMatchObject({ imported: 0, duplicates: 2 });
+  });
+
   it("blocks provider corrections with the same source ID and retains the actual ledger", async () => {
     await finance.commitFinanceImport(snapshot());
     const corrected = snapshot(); corrected.trades[0]!.quantity = "3";
