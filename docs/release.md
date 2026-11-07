@@ -63,3 +63,7 @@ APK Android 0.4.0 (código 6), gerado a partir do commit `0b2ca41`, com a mesma 
 ## Entrega 0.5.1
 
 APK Android 0.5.1 (código 8), do commit `5351d58`, com a assinatura já utilizada na versão 0.5.0. [Baixar e instalar pelo Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/c5d8aca8-8688-4ed8-ab5e-a179965eea7e). Compilação concluída e atualização instalada no emulador Android 16, preservando um rascunho de planejamento. As cinco abas, a fonte ampliada e a leitura nativa de PDF foram conferidas; a base SDK foi mantida por solicitação do usuário. Resultados e limitações em [validação de Finanças](financial-ui-validation.md).
+
+## Entrega 0.5.2
+
+APK Android 0.5.2 (código 9), do commit `510ca1d`, publicado em 07/11/2026. [Baixar e instalar pelo Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/830bab4f-e64c-4a7c-a0be-a42dcf14ae37). A tela “Onde investir?” reconhece a confirmação geral salva e explica as pendências individuais com uma ação direta. Os 242 testes e a checagem de tipos passaram. O pacote baixado contém as novas mensagens e possui assinatura válida, idêntica à versão 0.5.1. Instale por cima da versão existente. Evidências e limites em [validação da conferência para investir](investment-review-validation.md).
