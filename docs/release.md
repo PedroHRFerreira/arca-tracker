@@ -6,7 +6,7 @@ O identificador Android é `com.pedro.arcatracker`. Mantenha o identificador e o
 
 ## APK para instalação no celular
 
-O perfil `preview` em `apps/mobile/eas.json` gera um APK de distribuição interna, sem cliente de desenvolvimento e sem depender do computador ou Expo Go. A versão preparada nesta entrega é 0.5.1. O EAS mantém e incrementa o código de versão Android remotamente.
+O perfil `preview` em `apps/mobile/eas.json` gera um APK de distribuição interna, sem cliente de desenvolvimento e sem depender do computador ou Expo Go. A versão desta entrega é 0.5.1. O EAS mantém e incrementa o código de versão Android remotamente.
 
 Na raiz do repositório:
 
@@ -59,3 +59,7 @@ Referências: [APK e instalação](https://docs.expo.dev/build-reference/apk/), 
 ## Entrega 0.4.0
 
 APK Android 0.4.0 (código 6), gerado a partir do commit `0b2ca41`, com a mesma assinatura da versão 0.3.0. [Instalação pelo Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/25331167-05aa-48a7-a465-f7d030998b42). Evidências em [validação da conexão pessoal](open-finance-validation.md). A primeira conexão bancária no aparelho usa a chave pessoal em Carteira → Meus bancos, mantida fora do APK e do backup.
+
+## Entrega 0.5.1
+
+APK Android 0.5.1 (código 8), do commit `5351d58`, com a assinatura já utilizada na versão 0.5.0. [Baixar e instalar pelo Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/c5d8aca8-8688-4ed8-ab5e-a179965eea7e). Compilação concluída e atualização instalada no emulador Android 16, preservando um rascunho de planejamento. As cinco abas, a fonte ampliada e a leitura nativa de PDF foram conferidas; a base SDK foi mantida por solicitação do usuário. Resultados e limitações em [validação de Finanças](financial-ui-validation.md).

@@ -51,7 +51,7 @@ Na repetição com dados recém-importados, foi corrigida a confirmação de sal
 
 Capturas inspecionadas nesta rodada ficam temporariamente em `/tmp`: `arca-manual-finances-summary.png`, `arca-manual-reserve-options.png`, `arca-manual-quote-minimum-warning.png` e `arca-manual-overlapping-forecast.png`. Os roteiros e resultados de teste também são temporários, sem registros pessoais no repositório.
 
-Limites: estes testes locais não comprovam entrega de notificações Android, disponibilidade de um produto na conta bancária do usuário, consulta real de cotação ou funcionamento do Discord com o proprietário. Não foi gerado nem publicado outro APK nesta rodada.
+Limites da rodada web: estes testes locais não comprovam entrega de notificações Android, disponibilidade de um produto na conta bancária do usuário, consulta real de cotação ou funcionamento do Discord com o proprietário. A compilação e os testes do novo APK estão registrados abaixo.
 
 ## Preparação da versão 0.5.1
 
@@ -62,5 +62,17 @@ O Expo Doctor executado com Node 24 aprovou 19 de 22 verificações. Permanecem 
 Mais 11 cenários foram aprovados pelas cinco abas: navegação; objetivo e prazo por escolha com máscara; interrupção e retomada do questionário; recusa de investimento incompleto; reserva registrada uma vez; compra de duas unidades; recusa de venda superior à posição; venda parcial; navegação offline e preservação dos dados; histórico e pedido de plano antes da projeção; importação com acesso ao registro manual. São 43 cenários no total. Compra sintética de 2 × R$ 100 mais reserva de R$ 250 mostrou patrimônio de R$ 450; vender uma unidade reduziu para R$ 350, mantendo os R$ 250 de reserva separados.
 
 Essa conferência revelou um aviso React na rotação SVG do gráfico de distribuição que interceptava toques na prévia web. Foi corrigido usando a transformação SVG padrão, preservando a orientação e a compatibilidade nativa. A rodada completa das 11 verificações foi repetida após a correção, sem erros JavaScript ou avisos do gráfico. Captura adicional inspecionada: `/tmp/arca-release-dashboard390.png`.
+
+## APK 0.5.1 publicado e instalado
+
+Compilação EAS concluída em 07/11/2026, perfil preview, versão 0.5.1 e código Android 8, a partir do commit `5351d58203ec385b15cf2d13a816c921bd2b29d3`. [Página de instalação no Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/c5d8aca8-8688-4ed8-ab5e-a179965eea7e).
+
+- APK baixado e instalado no emulador Android 16 sobre a versão 0.5.0, código 7, sem desinstalar. O Android aceitou a assinatura e confirmou versão 0.5.1, código 8.
+- Abertura e preservação de um rascunho de planejamento com meta sintética de R$ 450,00, após a atualização.
+- Abertura de Início, Meu plano, Carteira, Evolução e Finanças por toque no APK instalado, sem depender do servidor local.
+- Com fonte Android ampliada para 130%, Finanças e os cinco rótulos da navegação permaneceram legíveis e acessíveis. A configuração de fonte do emulador foi restaurada ao terminar.
+- PDF sintético selecionado pelo seletor de arquivos do Android e lido pelo módulo nativo: PETR4, três unidades, preço de R$ 32,45, custos de R$ 0,05 e data 02/11/2026. A operação apareceu na conferência; não foi confirmada nem gravada como investimento.
+
+Capturas nativas inspecionadas, guardadas apenas em `/tmp`: `arca-native-051-pdf.png` e `arca-native-051-large-font.png`. Dados financeiros do dispositivo e arquivos de conexão não foram adicionados ao repositório. A entrega de notificações e o uso real do Discord com o proprietário continuam fora desta conferência; permanecem os avisos do SDK documentados acima, conforme a decisão de manter a base atual.
 
 Referências para os critérios educativos: [CVM — antes de investir](https://www.gov.br/investidor/pt-br/investir/antes-de-investir), [Tesouro Direto — regras e regulamento](https://tesourodireto.com.br/sobre-o-tesouro/regras-e-regulamento). As fontes de cada ativo permanecem no catálogo.
