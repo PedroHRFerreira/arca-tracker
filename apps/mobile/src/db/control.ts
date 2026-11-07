@@ -1,6 +1,6 @@
 import { ControlCommandSchema, ControlStateSchema, applyControlCommand, createControlState, type ControlCommand, type ControlState } from '@arca/domain';
 import * as Crypto from 'expo-crypto';
-import { getSetting, setSetting, migrateDatabase } from './database';
+import { getSetting, setSetting, migrateDatabase, restoreDatabaseJson } from './database';
 
 export type ControlMutation = ControlCommand extends infer C ? C extends ControlCommand ? Omit<C, 'id' | 'baseRevision' | 'createdAt'> : never : never;
 export type ControlBundle = {
@@ -13,6 +13,12 @@ const listeners = new Set<() => void>();
 export function subscribeControl(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener); }; }
 export function withControlLock<T>(operation: () => Promise<T>): Promise<T> {
   const task = serial.then(operation, operation); serial = task.catch(() => undefined); return task;
+}
+export async function restoreLocalBackup(value: unknown): Promise<void> {
+  await withControlLock(async () => {
+    await restoreDatabaseJson(value);
+    listeners.forEach(listener => listener());
+  });
 }
 export async function loadControlBundle(): Promise<ControlBundle> {
   await migrateDatabase();

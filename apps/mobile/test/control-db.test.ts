@@ -44,6 +44,34 @@ function fakeServer() {
   return { get state() { return state; }, mutate(command: ControlCommand) { state = applyControlCommand(state, command); }, interrupt() { interruptAfterCommit = true; } };
 }
 describe('control local persistence and synchronization', () => {
+  it('refreshes subscribers only after a complete restore and keeps online review required', async () => {
+    await control.dispatchControlCommand(account('backup'));
+    const backup = await database.exportDatabaseJson();
+    await control.dispatchControlCommand(account('later'));
+    const notify = vi.fn(); const unsubscribe = control.subscribeControl(notify);
+    await control.restoreLocalBackup(backup);
+    expect(notify).toHaveBeenCalledTimes(1);
+    const bundle = await control.loadControlBundle();
+    expect(bundle.state.accounts.map(row => row.id)).toEqual(['backup']);
+    expect(bundle.restorePending).toBe(true);
+    await expect(control.restoreLocalBackup({ version: 3, tables: {} })).rejects.toThrow();
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect((await control.loadControlBundle()).state.accounts.map(row => row.id)).toEqual(['backup']);
+    unsubscribe();
+  });
+  it('serializes a restore with an in-flight local operation', async () => {
+    await control.dispatchControlCommand(account('backup'));
+    const backup = await database.exportDatabaseJson();
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const pending = control.withControlLock(() => gate);
+    let restored = false;
+    const restore = control.restoreLocalBackup(backup).then(() => { restored = true; });
+    await Promise.resolve(); await Promise.resolve();
+    expect(restored).toBe(false);
+    release(); await pending; await restore;
+    expect(restored).toBe(true);
+  });
   it('serializes concurrent offline edits without dropping a command', async () => {
     await Promise.all([control.dispatchControlCommand(account('one')), control.dispatchControlCommand(account('two'))]);
     const bundle = await control.loadControlBundle();

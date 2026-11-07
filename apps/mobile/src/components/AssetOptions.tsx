@@ -30,60 +30,72 @@ export function AssetOptions({
   profile,
   reserveValue,
   portfolio,
+  amount,
+  explain = false,
+  focus,
 }: {
   strategy?: PlanningProfile["strategy"];
   targets?: PlanningTargets;
   profile?: PlanningProfile;
   reserveValue?: string;
   portfolio?: PortfolioSummary;
+  amount?: string;
+  explain?: boolean;
+  focus?: 'RESERVE' | 'LONG_TERM';
 }) {
+  const [showAll, setShowAll] = useState(false);
   const evaluation = profile ? evaluatePlan(profile, reserveValue) : null;
+  const isReserve = focus ? focus === 'RESERVE' : evaluation?.phase === 'RESERVE';
   const budget = profile ? calculateBudget(profile) : null;
   const allocation =
     profile && portfolio
-      ? allocateContribution({ profile, portfolio, reserveValue })
+      ? allocateContribution({ profile, portfolio, reserveValue, amount })
       : null;
   const paused =
     evaluation?.phase === "DEBT" ||
-    (budget?.configured && Number(budget.available) === 0);
+    (amount !== undefined ? Number(amount) <= 0 : budget?.configured && Number(budget.available) === 0);
   const entries = INVESTMENT_CATALOG.filter(
     (entry) =>
       !paused &&
-      (evaluation?.phase === "RESERVE"
+      (isReserve
         ? entry.assetType === "TREASURY"
         : true) &&
-      (evaluation?.phase === "RESERVE" ||
+      (isReserve ||
         !targets ||
         Number(targets[entry.arcaClass]) > 0) &&
       (strategy !== "SIMPLE" ||
         entry.assetType === "TREASURY" ||
         (entry.assetType === "ETF" && entry.broadMarket)),
-  );
+  ).sort((a, b) => explain ? Number(b.assetType === 'TREASURY') - Number(a.assetType === 'TREASURY') || Number(b.broadMarket) - Number(a.broadMarket) : 0);
   return (
-    <Card>
+    <Card style={explain ? { borderRadius: 12, borderColor: colors.border } : undefined}>
       <Text style={styles.eyebrow}>CONHEÇA AS POSSIBILIDADES</Text>
-      <Text style={styles.title}>Opções para o seu próximo passo</Text>
+      <Text style={styles.title}>{explain ? 'O que comparar e por quê' : 'Opções para o seu próximo passo'}</Text>
       <Text style={styles.copy}>
-        Exemplos para estudar e comparar. Abra cada um para entender sua
-        finalidade, riscos, resgate e custos.
+        {explain ? 'Escolhidas pelos grupos do seu plano. Abra uma opção para ver as condições e como continuar.' : 'Exemplos para estudar e comparar. Abra cada um para entender sua finalidade, riscos, resgate e custos.'}
       </Text>
-      <Text style={styles.copy}>
+      {!explain && <Text style={styles.copy}>
         Este catálogo não é uma carteira pronta nem uma ordem de compra. Uma
         ação ou um fundo isolado não garante diversificação.
-      </Text>
-      {entries.map((entry) => (
+      </Text>}
+      {(explain && !showAll ? entries.slice(0, 3) : entries).map((entry) => (
         <AssetOption
           key={entry.symbol}
           entry={entry}
+          rationale={explain ? entry.assetType === 'TREASURY'
+            ? isReserve ? 'Para construir sua reserva: título de renda fixa com menor oscilação que ações. O resgate segue as regras e os horários do Tesouro.' : 'Para a parcela de renda fixa: ajuda a equilibrar a exposição às oscilações das ações no seu plano.'
+            : entry.broadMarket ? entry.exposure === 'GLOBAL' ? 'Para a parcela internacional: reúne exposição a ações de vários países, com risco de bolsa e de câmbio.' : 'Para a parcela de ações brasileiras: uma cesta de empresas em vez de depender de uma única ação.'
+            : entry.assetType === 'EQUITY' ? 'Exemplo de uma empresa, sem indicação de compra. Exige análise de resultados, preço e concentração antes de decidir.' : 'Exemplo para o grupo de imóveis. Confira concentração, vacância e riscos; os rendimentos não são garantidos.' : undefined}
           plannedAmount={
             allocation
-              ? evaluation?.phase === "RESERVE"
+              ? isReserve
                 ? allocation.reserve
                 : allocation.investments[entry.arcaClass]
               : undefined
           }
         />
       ))}
+      {explain && entries.length > 3 && <Pressable accessibilityRole="button" accessibilityState={{ expanded: showAll }} onPress={() => setShowAll(!showAll)} style={styles.quoteButton}><Text style={styles.link}>{showAll ? 'Mostrar só as primeiras opções' : `Ver outros ${entries.length - 3} exemplos do catálogo`}</Text></Pressable>}
       {!entries.length && (
         <Text style={styles.copy}>
           {paused
@@ -102,9 +114,11 @@ export function AssetOptions({
 function AssetOption({
   entry,
   plannedAmount,
+  rationale,
 }: {
   entry: InvestmentCatalogEntry;
   plannedAmount?: string;
+  rationale?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -150,6 +164,7 @@ function AssetOption({
         </View>
         <Text style={styles.expand}>{expanded ? "−" : "+"}</Text>
       </Pressable>
+      {!!rationale && <Text style={[styles.copy, { marginTop: 0, marginBottom: 12 }]}>{rationale}</Text>}
       {expanded && (
         <View style={styles.details}>
           {plannedAmount !== undefined && (

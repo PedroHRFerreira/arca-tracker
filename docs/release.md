@@ -6,7 +6,7 @@ O identificador Android é `com.pedro.arcatracker`. Mantenha o identificador e o
 
 ## APK para instalação no celular
 
-O perfil `preview` em `apps/mobile/eas.json` gera um APK de distribuição interna, sem cliente de desenvolvimento e sem depender do computador ou Expo Go. A versão visível desta entrega é 0.4.0. O EAS mantém e incrementa o código de versão Android remotamente.
+O perfil `preview` em `apps/mobile/eas.json` gera um APK de distribuição interna, sem cliente de desenvolvimento e sem depender do computador ou Expo Go. A versão preparada nesta entrega é 0.5.1. O EAS mantém e incrementa o código de versão Android remotamente.
 
 Na raiz do repositório:
 

@@ -27,11 +27,11 @@ import {
   getActivePlan,
   getSetting,
   getTargets,
-  restoreDatabaseJson,
   saveTargets,
   setSetting,
 } from "@/db/database";
 import { getProxyToken, setProxyToken } from "@/api/market";
+import { restoreLocalBackup } from "@/db/control";
 import { FINANCE_SERVICE_AVAILABLE } from "@/api/finance";
 import { useApp } from "@/providers/AppProvider";
 import { colors } from "@/theme";
@@ -196,7 +196,7 @@ export default function Settings() {
         Platform.OS === "web"
           ? await (await fetch(uri)).text()
           : await FileSystem.readAsStringAsync(uri);
-      await restoreDatabaseJson(JSON.parse(content));
+      await restoreLocalBackup(JSON.parse(content));
       restored = true;
       await refresh();
       await load();

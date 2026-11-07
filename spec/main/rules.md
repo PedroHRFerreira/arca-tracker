@@ -9,3 +9,5 @@
 - Entregar no app apenas funcionalidades completas, disponíveis e verificadas nos fluxos suportados. Não adicionar demonstrações, botões sem função, funções incompletas ou integrações indisponíveis como se fossem recursos utilizáveis.
 
 - Importação e sincronização da carteira devem usar soluções sem mensalidade.
+
+- Finanças deve priorizar um resumo curto e um próximo passo com ação explícita; detalhes ficam em áreas próprias. Abas usam base reta e transições discretas, sem cápsulas ou efeito de bolha. Sugestões explicam valor, motivo e próxima ação, considerando orçamento, reserva, prazo e risco.

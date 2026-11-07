@@ -8,13 +8,14 @@ import { useControl } from '@/providers/useControl';
 import { Button, Card, ScreenHeader } from '@/components/ui';
 import { ControlChoices, ControlField, ControlToggle, controlDateLabel, controlMoney, controlStyles as s } from '@/components/ControlUI';
 import { colors } from '@/theme';
+import { financeErrorMessage } from '@/financeValidation';
+import { localObservationMinute, observationTimestamp } from '@/financeObservation';
 
 const kinds: Record<string, ControlCollection> = { account: 'accounts', balance: 'balanceObservations', income: 'incomes', expense: 'expenses', card: 'cards', bill: 'bills', purchase: 'purchases', payment: 'payments', forecast: 'forecasts', category: 'categories' };
 const labels: Record<ControlCollection, string> = { accounts: 'Conta bancária', balanceObservations: 'Saldo da conta', incomes: 'Receita', expenses: 'Despesa', cards: 'Cartão de crédito', bills: 'Fatura', purchases: 'Compra ou parcela', payments: 'Pagamento de fatura', forecasts: 'Previsão das faturas', categories: 'Categoria e orçamento' };
 type Form = Record<string, string | boolean>;
 type Entity = Record<string, unknown> & { id: string; cancelled?: boolean };
 const amountText = (value: unknown) => typeof value === 'number' ? (Math.abs(value) / 100).toFixed(2) : '';
-const localTime = (iso: string) => { const date = new Date(iso); return `${localDateString(date)}T${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`; };
 const sameDayTimestamp = (value: string, oldDate?: unknown, oldTimestamp?: unknown) => oldDate === value && typeof oldTimestamp === 'string' ? oldTimestamp : value === localDateString() ? new Date().toISOString() : null;
 function findEntity(state: ControlState, collection: ControlCollection, id?: string, month?: string): Entity | undefined {
   if (!id) return undefined;
@@ -54,7 +55,7 @@ export default function FinanceEntry() {
       dueDate: String(source.dueDate ?? (params.month ? `${params.month}-01` : today)),
       settledDate: String(source.settledDate ?? today), paidDate: String(source.paidDate ?? today), purchaseDate: String(source.purchaseDate ?? today),
       month: String(source.month ?? params.month ?? today.slice(0, 7)),
-      observedAt: localTime(String(source.observedAt ?? new Date().toISOString())),
+      observedAt: localObservationMinute(String(source.observedAt ?? new Date().toISOString())),
       status: String(source.status ?? 'EXPECTED'), verification: String(source.verification ?? 'ESTIMATED'),
       confirmed: source.confirmed === true, affectsCash: source.affectsCash !== false,
       kind: String(source.kind ?? (collection === 'incomes' ? 'EXTRA' : 'EXPENSE')),
@@ -89,11 +90,8 @@ export default function FinanceEntry() {
     let entity: Record<string, unknown>;
     if (collection === 'accounts') entity = { ...base, name };
     else if (collection === 'balanceObservations') {
-      const value = text('observedAt');
-      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) throw new Error('Informe a data e a hora no formato 2026-11-03T09:30.');
-      const observed = new Date(value);
-      if (!Number.isFinite(observed.getTime()) || localTime(observed.toISOString()) !== value || observed.getTime() > Date.now()) throw new Error('O saldo precisa de uma data e hora válidas, sem estar no futuro.');
-      entity = { ...base, accountId: reference('accountId', true), balanceCents: cents('amount')! * (flag('negative') ? -1 : 1), observedAt: observed.toISOString(), confirmed: flag('confirmed') };
+      const observedAt = observationTimestamp(text('observedAt'), original.current?.observedAt);
+      entity = { ...base, accountId: reference('accountId', true), balanceCents: cents('amount')! * (flag('negative') ? -1 : 1), observedAt, confirmed: flag('confirmed') };
     } else if (collection === 'incomes' || collection === 'expenses') {
       const status = text('status');
       const settledDate = status === 'SETTLED' ? date('settledDate', true) : null;
@@ -118,7 +116,7 @@ export default function FinanceEntry() {
     } else if (collection === 'forecasts') entity = { ...base, month: text('month'), totalCents: cents('amount'), cardIds: text('cardIds').split('|').filter(Boolean), includesRecurring: flag('includesRecurring'), compositionReviewed: flag('compositionReviewed') };
     else entity = { ...base, name, budgetCents: cents('budget', true), essential: flag('essential') };
     const parsed = controlCollectionSchemas[collection].safeParse(entity);
-    if (!parsed.success) throw new Error(`Revise os campos: ${parsed.error.issues.map(issue => issue.message).join(' ')}`);
+    if (!parsed.success) throw parsed.error;
     return parsed.data as Entity;
   }
   function assertUnchanged() {
@@ -126,14 +124,14 @@ export default function FinanceEntry() {
     const latest = findEntity(state, collection, params.id, params.month);
     if (JSON.stringify(latest) !== JSON.stringify(original.current)) throw new Error('Este registro mudou durante a edição. Volte à lista e abra-o novamente para revisar.');
   }
-  function prepare() { try { assertUnchanged(); setReview(build()); setError(''); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Revise os campos.'); } }
+  function prepare() { try { assertUnchanged(); setReview(build()); setError(''); } catch (cause) { setError(financeErrorMessage(cause, 'Revise os campos.')); } }
   async function persist(cancel = false) {
     try {
       assertUnchanged();
       if (cancel && state[collection].some(row => row.id === entityId.current)) await save({ type: 'CANCEL', collection, entityId: entityId.current });
       else await save({ type: 'UPSERT', collection, entity: cancel ? { ...original.current, cancelled: true } : review! });
       if (router.canGoBack()) router.back(); else router.replace('/(tabs)/finances');
-    } catch (cause) { setReview(null); setCancelReview(false); setError(cause instanceof Error ? cause.message : 'Não foi possível salvar.'); }
+    } catch (cause) { setReview(null); setCancelReview(false); setError(financeErrorMessage(cause)); }
   }
   const field = (key: string, label: string, help?: string, currency = false) => <ControlField key={key} label={label} help={help} currency={currency} value={text(key)} onChangeText={value => set(key, value)} autoCapitalize="none" />;
   const toggle = (key: string, label: string, help?: string) => <ControlToggle key={key} label={label} help={help} value={flag(key)} onChange={value => set(key, value)} />;

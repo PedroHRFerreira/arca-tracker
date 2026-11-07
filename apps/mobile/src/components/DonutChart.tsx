@@ -23,7 +23,7 @@ export function DonutChart({
       }}
     >
       <Svg width={size} height={size} viewBox="0 0 180 180">
-        <G rotation="-90" origin="90,90">
+        <G transform="rotate(-90 90 90)">
           <Circle
             cx="90"
             cy="90"

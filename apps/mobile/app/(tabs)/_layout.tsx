@@ -13,7 +13,7 @@ export default function TabsLayout() {
         animation: reduced ? "none" : "fade",
         transitionSpec: {
           animation: "timing",
-          config: { duration: reduced ? 0 : 220 },
+          config: { duration: reduced ? 0 : 160 },
         },
         sceneStyle: { backgroundColor: colors.background },
         tabBarStyle: { position: "absolute" },
