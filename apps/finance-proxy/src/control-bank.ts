@@ -239,6 +239,7 @@ export function applyBankControlImport(input: ControlState, bank: BankControlImp
   const pendingLinks: BankControlApplication['pendingLinks'] = [];
   const pendingTransactions: BankControlTransaction[] = [];
   const cardIds = new Map<string, string>(), billIds = new Map<string, string>();
+  const currentMonth = new Intl.DateTimeFormat('sv-SE', { timeZone: state.settings.timezone }).format(new Date(bank.syncedAt)).slice(0, 7);
   const complete = new Set(bank.connections.filter(connection => connection.status === 'UPDATED' && connection.accountsComplete && connection.transactionsComplete && connection.billsComplete).map(connection => connection.id));
   let incompleteCash = bank.connections.some(connection => !complete.has(connection.id));
   let incompleteObligations = incompleteCash;
@@ -293,6 +294,10 @@ export function applyBankControlImport(input: ControlState, bank: BankControlImp
       warnings.push('Mais de uma fatura foi cadastrada para o mesmo cartão e mês. Revise antes de vincular.'); incompleteObligations = true; continue;
     }
     const existing = strong ?? candidates[0];
+    if (!existing && month < currentMonth) {
+      warnings.push('Faturas históricas sem cadastro prévio permanecem na consulta. Elas não foram criadas como novas dívidas.');
+      continue;
+    }
     if (existing?.cancelled) { incompleteObligations = true; continue; }
     if (existing?.source === 'BANK' && existing.externalId !== bill.id) {
       warnings.push('O banco informou outra fatura para o mesmo cartão e mês. Confira os ciclos antes de substituir.'); incompleteObligations = true; continue;
@@ -334,4 +339,19 @@ export function applyBankControlImport(input: ControlState, bank: BankControlImp
   if (incompleteObligations || pendingLinks.length) { state.settings.obligationsReviewed = false; state.settings.reviewed = false; }
   if (pendingTransactions.length) warnings.push('Movimentações aguardam conciliação; receitas e pagamentos não foram recriados a partir do histórico bancário.');
   return { state: ControlStateSchema.parse(state), pendingTransactions, pendingLinks, warnings: [...new Set(warnings)] };
+}
+
+/** Refresh facts for established links; history is not a new cash flow or debt. */
+export function applyKnownBankControlImport(input: ControlState, bank: BankControlImport): BankControlApplication {
+  const linkedAccounts = new Set(input.accounts.filter(row => row.source === 'BANK' && !row.cancelled).map(row => row.externalId));
+  const linkedCards = new Set(input.cards.filter(row => row.source === 'BANK' && !row.cancelled).map(row => row.externalId));
+  if (!linkedAccounts.size && !linkedCards.size) return { state: ControlStateSchema.parse(input), pendingLinks: [], pendingTransactions: [], warnings: [...bank.warnings] };
+  const summaryOnly = {
+    ...bank,
+    accounts: bank.accounts.filter(row => linkedAccounts.has(row.id)),
+    cards: bank.cards.filter(row => linkedCards.has(row.id)),
+    bills: bank.bills.filter(row => linkedCards.has(row.cardId)),
+    transactions: [],
+  };
+  return applyBankControlImport(input, summaryOnly);
 }

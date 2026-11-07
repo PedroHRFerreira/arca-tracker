@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyBankControlImport, loadControlBankImport } from '../src/control-bank';
+import { applyBankControlImport, applyKnownBankControlImport, loadControlBankImport } from '../src/control-bank';
 import { createControlState, ControlStateSchema } from '@arca/domain';
 
 const itemId = '11111111-1111-4111-8111-111111111111';
@@ -27,6 +27,31 @@ function provider(overrides: Overrides = {}) {
 }
 
 describe('private control bank adapter', () => {
+  it('updates established balances without replaying history or creating old unverified debts', async () => {
+    const current = await loadControlBankImport(credentials, provider({ bills: [bill, { ...bill, id: 'historical-bill', dueDate: '2026-09-10' }], movements: { 'bank-account': [movement('bank-account', { id: 'income', type: 'CREDIT', amount: 500 })] } }), { now });
+    const initial = applyBankControlImport(createControlState(now.toISOString()), { ...current, transactions: [] }).state;
+    expect(initial.bills).toHaveLength(1);
+    const updatedBank = { ...current, accounts: current.accounts.map(account => ({ ...account, balanceCents: 25000, observedAt: '2026-11-03T14:00:00.000Z' })) };
+    const next = applyKnownBankControlImport(initial, updatedBank).state;
+    expect(next.balanceObservations.at(-1)?.balanceCents).toBe(25000);
+    expect(next.incomes).toHaveLength(0); expect(next.expenses).toHaveLength(0);
+    expect(next.bills).toHaveLength(1);
+    expect(applyKnownBankControlImport(next, updatedBank).state).toEqual(next);
+  });
+  it('requires initial links and preserves manual payments and unsupported cards during automatic updates', async () => {
+    const current = await loadControlBankImport(credentials, provider(), { now });
+    const manual = ControlStateSchema.parse({ ...createControlState(now.toISOString()),
+      accounts: [{ id: 'manual-account', name: 'Conta exemplo' }], cards: [{ id: 'manual-card', name: 'Cartão exemplo' }],
+      bills: [{ id: 'manual-bill', cardId: 'manual-card', month: '2026-11', totalCents: 12500, dueDate: '2026-11-10' }],
+      payments: [{ id: 'manual-payment', billId: 'manual-bill', amountCents: 12500, paidDate: '2026-11-02', confirmed: true }],
+    });
+    expect(applyKnownBankControlImport(manual, current).state).toEqual(manual);
+    const linked = applyBankControlImport(manual, { ...current, transactions: [] }, { accountLinks: { [current.accounts[0]!.id]: 'manual-account' }, cardLinks: { [current.cards[0]!.id]: 'manual-card' } }).state;
+    const next = applyKnownBankControlImport(linked, current).state;
+    expect(next.accounts).toHaveLength(1); expect(next.cards).toHaveLength(1);
+    expect(next.payments).toEqual(manual.payments);
+    expect(next.bills[0]?.id).toBe('manual-bill');
+  });
   it('preserves BRL bills and balances when a posted foreign purchase is already included in an identified BRL bill', async () => {
     const result = await loadControlBankImport(credentials, provider({ movements: { 'credit-account': [movement('credit-account', { currencyCode: 'USD', creditCardMetadata: { billId: 'bill-1' } })] } }), { now });
     expect(result.connections[0]?.status).toBe('UPDATED');
@@ -175,7 +200,7 @@ describe('bank import review and reconciliation', () => {
     const bankImport = await loadControlBankImport(credentials, provider(), { now });
     const previous = applyBankControlBankTest(bankImport).state;
     previous.settings.reviewed = previous.settings.cashConfirmed = previous.settings.obligationsReviewed = true;
-    const failed = applyBankControlImport(previous, { ...bankImport, connections: bankImport.connections.map(value => ({ ...value, status: 'ERROR' })) });
+    const failed = applyKnownBankControlImport(previous, { ...bankImport, connections: bankImport.connections.map(value => ({ ...value, status: 'ERROR' })) });
     expect(failed.state.balanceObservations).toEqual(previous.balanceObservations); expect(failed.state.bills).toEqual(previous.bills);
     expect(failed.state.settings).toMatchObject({ reviewed: false, cashConfirmed: false, obligationsReviewed: false });
     const missing = applyBankControlImport(previous, { ...bankImport, accounts: bankImport.accounts.map(value => ({ ...value, balanceCents: null })) });

@@ -1,22 +1,16 @@
 import { getControlAlerts } from '@arca/domain';
 import { controlToday, discordConfigured } from './control-discord';
-import { applyBankControlImport } from './control-bank';
-import { refreshControlBankCache, type ControlEnv } from './control-router';
-import { commitControlCommand, CONTROL_OWNER, readControlState, readDiscordConnection } from './control-store';
+import { refreshControlBankCache, applyAvailableControlBankData, type ControlEnv } from './control-router';
+import { CONTROL_OWNER, readControlState, readDiscordConnection } from './control-store';
 
 export async function runControlSchedule(env: ControlEnv): Promise<void> {
   if (!env.DB) return;
-  let state = await readControlState(env.DB);
   const cache = await env.DB.prepare('SELECT updated_at FROM control_bank_cache WHERE id = 1').first<{ updated_at: string }>();
-  if (cache && Date.now() - Date.parse(cache.updated_at) > 24 * 3600000) {
-    try {
-      const bank = await refreshControlBankCache(env);
-      const ignored = await env.DB.prepare('SELECT id FROM control_bank_decisions').all<{ id: string }>();
-      const ids = new Set(ignored.results.map(row => row.id));
-      const review = applyBankControlImport(state, { ...bank, transactions: bank.transactions.filter(row => !ids.has(row.id)) });
-      state = await commitControlCommand(env.DB, { id: crypto.randomUUID(), baseRevision: state.revision, createdAt: new Date().toISOString(), type: 'REPLACE_REVIEWED', state: review.state, confirmed: true });
-    } catch { /* Cache and previously confirmed records remain available, with their original dates. */ }
-  }
+  try {
+    const bank = !cache || Date.now() - Date.parse(cache.updated_at) >= 60 * 60000 ? await refreshControlBankCache(env) : undefined;
+    await applyAvailableControlBankData(env, bank);
+  } catch { /* Preserve known data and retry next hour without claiming a successful bank update. */ }
+  const state = await readControlState(env.DB);
   await env.DB.prepare('DELETE FROM control_tokens WHERE expires_at < ?').bind(new Date(Date.now() - 86400000).toISOString()).run();
   if (!discordConfigured(env) || !state.settings.alerts.discord) return;
   const localHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: state.settings.timezone, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));

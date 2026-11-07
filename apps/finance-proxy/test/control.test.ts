@@ -5,6 +5,9 @@ import { createControlState, type ControlCommand } from '@arca/domain';
 import worker, { type FinanceRuntime } from '../src/index';
 import { commitControlCommand, issueControlToken, readControlState } from '../src/control-store';
 import { handleDiscord, verifyDiscordRequest } from '../src/control-discord';
+import { applyAvailableControlBankData } from '../src/control-router';
+import { runControlSchedule } from '../src/control-schedule';
+import type { BankControlImport } from '../src/control-bank';
 
 let runtime: Miniflare;
 let db: D1Database;
@@ -56,6 +59,78 @@ describe('private control persistence', () => {
     expect((await worker.fetch(new Request('https://test.example/v1/control/commands', { method: 'POST', headers, body: JSON.stringify({ command: mutation('stale', 0) }) }), env)).status).toBe(409);
     expect((await worker.fetch(new Request('https://test.example/v1/control/commands', { method: 'POST', headers, body: '{bad' }), env)).status).toBe(400);
     expect((await worker.fetch(new Request('https://test.example/v1/payments', { method: 'POST', headers }), env)).status).toBe(405);
+  });
+});
+
+describe('automatic bank facts in the shared ledger', () => {
+  const item = '11111111-1111-4111-8111-111111111111';
+  const sourceId = `pluggy:${item}:account:account-upstream`;
+  function environment(): FinanceRuntime {
+    return { DB: db, ALLOWED_ORIGINS: 'http://localhost:8083,http://localhost:8084,http://localhost:8085', PLUGGY_CLIENT_ID: 'synthetic-client', PLUGGY_CLIENT_SECRET: 'synthetic-secret',
+      PERSONAL_ITEMS_JSON: JSON.stringify([{ id: item, institution: 'NUBANK' }]), ARCA_FINANCE_TOKEN: 'synthetic-private-token-at-least-32-characters' };
+  }
+  function bank(): BankControlImport {
+    const timestamp = new Date().toISOString();
+    return { version: 1, syncedAt: timestamp, connections: [{ id: item, institution: 'NUBANK', status: 'UPDATED', updatedAt: timestamp, accountsComplete: true, transactionsComplete: true, billsComplete: true }],
+      accounts: [{ id: sourceId, externalId: 'account-upstream', connectionId: item, institution: 'NUBANK', name: 'Conta exemplo', balanceCents: 5432, observedAt: timestamp }], cards: [], bills: [], transactions: [], warnings: [] };
+  }
+  async function link() {
+    await commitControlCommand(db, { ...mutation(), entity: { id: 'account-one', name: 'Conta exemplo', source: 'BANK', externalId: sourceId } } as ControlCommand);
+  }
+  async function cache(value: BankControlImport) {
+    await db.prepare('INSERT INTO control_bank_cache(id,payload_json,updated_at) VALUES(1,?,?)').bind(JSON.stringify(value), value.syncedAt).run();
+  }
+  it('applies a new dated balance once and leaves repeated updates without extra revisions', async () => {
+    await link(); const value = bank();
+    await applyAvailableControlBankData(environment(), value);
+    let state = await readControlState(db);
+    expect(state.revision).toBe(2); expect(state.balanceObservations).toHaveLength(1);
+    expect(state.balanceObservations[0]?.balanceCents).toBe(5432);
+    await applyAvailableControlBankData(environment(), value);
+    state = await readControlState(db); expect(state.revision).toBe(2);
+    expect(state.incomes).toEqual([]); expect(state.expenses).toEqual([]);
+  });
+  it('applies an already fresh cache in the hourly task without a new provider call', async () => {
+    await link(); await cache(bank()); const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    await runControlSchedule(environment());
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((await readControlState(db)).balanceObservations[0]?.balanceCents).toBe(5432);
+  });
+  it('refreshes provider data and the ledger together through the existing API', async () => {
+    await link();
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const url = new URL(String(input)); expect(url.origin).toBe('https://api.pluggy.ai');
+      if (url.pathname === '/auth') return Response.json({ apiKey: 'synthetic-key' });
+      if (url.pathname === `/items/${item}`) return Response.json({ id: item, connector: { name: 'MeuPluggy' }, status: 'UPDATED', lastUpdatedAt: new Date().toISOString() });
+      if (url.pathname === '/accounts') return Response.json({ results: [{ id: 'account-upstream', itemId: item, type: 'BANK', currencyCode: 'BRL', balance: 54.32 }], totalPages: 1 });
+      if (url.pathname === '/v2/transactions') return Response.json({ results: [], next: null });
+      throw new Error('Unexpected endpoint');
+    }));
+    const env = environment();
+    const response = await worker.fetch(new Request('https://test.example/v1/control/banks/refresh', { method: 'POST', headers: { authorization: `Bearer ${env.ARCA_FINANCE_TOKEN}`, 'content-type': 'application/json' }, body: '{}' }), env);
+    expect(response.status).toBe(200);
+    expect((await readControlState(db)).balanceObservations[0]?.balanceCents).toBe(5432);
+  });
+  it('rereads after a concurrent edit instead of overwriting it with the bank preview', async () => {
+    await link();
+    let raced = false;
+    const racingDb = new Proxy(db, { get(target, property) {
+      if (property === 'batch') return async (statements: D1PreparedStatement[]) => {
+        if (!raced) {
+          raced = true;
+          await commitControlCommand(db, { ...mutation('concurrent', 1), entity: { id: 'manual-other', name: 'Outra conta preservada' } } as ControlCommand);
+        }
+        return db.batch(statements);
+      };
+      const value = Reflect.get(target, property);
+      return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    await applyAvailableControlBankData({ ...environment(), DB: racingDb }, bank());
+    expect(raced).toBe(true);
+    const state = await readControlState(db);
+    expect(state.accounts.map(row => row.id)).toEqual(['account-one', 'manual-other']);
+    expect(state.balanceObservations[0]?.balanceCents).toBe(5432);
+    expect(state.revision).toBe(3);
   });
 });
 

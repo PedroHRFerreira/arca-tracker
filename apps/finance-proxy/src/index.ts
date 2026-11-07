@@ -1,5 +1,5 @@
 import { PersonalItemsSchema, ProviderError, loadPersonalSnapshot } from './provider';
-import { handleControl, boundedJson, refreshControlBankCache, type ControlEnv } from './control-router';
+import { handleControl, boundedJson, refreshControlBankCache, applyAvailableControlBankData, type ControlEnv } from './control-router';
 import { handleDiscord } from './control-discord';
 import { runControlSchedule } from './control-schedule';
 
@@ -29,7 +29,7 @@ export default {
         if (!configured.some(item => item.id === body.itemId)) return json({ received: true });
         const cache = await env.DB.prepare('SELECT updated_at FROM control_bank_cache WHERE id = 1').first<{ updated_at: string }>();
         if (!cache || Date.now() - Date.parse(cache.updated_at) > 15 * 60000) {
-          const operation = refreshControlBankCache(env).then(() => undefined);
+          const operation = refreshControlBankCache(env).then(bank => applyAvailableControlBankData(env, bank));
           if (ctx) ctx.waitUntil(operation); else await operation;
         }
         return json({ received: true });

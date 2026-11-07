@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { calculateControlSummary, projectControlMonths, ControlCommandSchema, ControlIncomeSchema, ControlExpenseSchema, ControlPaymentSchema, ControlPurchaseSchema } from '@arca/domain';
 import { PersonalItemsSchema } from './provider';
-import { applyBankControlImport, loadControlBankImport, type BankControlImport } from './control-bank';
+import { applyBankControlImport, applyKnownBankControlImport, loadControlBankImport, type BankControlImport } from './control-bank';
 import { commitControlCommand, ControlError, CONTROL_OWNER, issueControlToken, readControlState, readDiscordConnection } from './control-store';
 import { controlToday, type DiscordConfig } from './control-discord';
 import { configureDiscord, discordReady } from './control-configuration';
@@ -35,6 +35,23 @@ export async function refreshControlBankCache(env: ControlEnv): Promise<BankCont
     .bind(JSON.stringify(bank), bank.syncedAt).run();
   return bank;
 }
+
+export async function applyAvailableControlBankData(env: ControlEnv, available?: BankControlImport): Promise<void> {
+  if (!env.DB) throw new ControlError('CONTROL_NOT_CONFIGURED', 503);
+  const bank = available ?? await cachedBank(env.DB);
+  if (!bank) return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const state = await readControlState(env.DB);
+    const review = applyKnownBankControlImport(state, bank);
+    if (JSON.stringify(review.state) === JSON.stringify(state)) return;
+    try {
+      await commitControlCommand(env.DB, { id: crypto.randomUUID(), baseRevision: state.revision, createdAt: new Date().toISOString(), type: 'REPLACE_REVIEWED', state: review.state, confirmed: true });
+      return;
+    } catch (error) {
+      if (!(error instanceof ControlError) || error.code !== 'REVISION_CONFLICT' || attempt === 2) throw error;
+    }
+  }
+}
 const links = z.record(z.string().min(1).max(200)).refine(value => Object.keys(value).length <= 200);
 export async function handleControl(request: Request, env: ControlEnv): Promise<Response> {
   if (!env.DB) return privateJson({ error: 'CONTROL_NOT_CONFIGURED' }, 503);
@@ -62,6 +79,7 @@ export async function handleControl(request: Request, env: ControlEnv): Promise<
     if (path === 'banks/refresh') {
       await boundedJson(request, 1024);
       const bank = await refreshControlBankCache(env);
+      await applyAvailableControlBankData(env, bank);
       return privateJson({ updatedAt: bank.syncedAt, warnings: bank.warnings });
     }
     if (path === 'banks/apply') {

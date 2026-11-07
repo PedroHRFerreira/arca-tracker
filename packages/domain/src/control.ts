@@ -172,6 +172,18 @@ export function createControlState(now = new Date().toISOString()): ControlState
   });
 }
 
+function fullyCoveredBills(state: ControlState, asOf: string): Set<string> {
+  const totals = new Map(state.bills.filter(bill => !bill.cancelled && bill.totalCents > 0).map(bill => [bill.id, bill.totalCents]));
+  const paid = new Map<string, number>();
+  for (const payment of state.payments) {
+    const total = totals.get(payment.billId);
+    if (total !== undefined && !payment.cancelled && payment.confirmed && payment.paidDate <= asOf) {
+      paid.set(payment.billId, Math.min(total, (paid.get(payment.billId) ?? 0) + payment.amountCents));
+    }
+  }
+  return new Set([...paid].filter(([id, amount]) => amount >= totals.get(id)!).map(([id]) => id));
+}
+
 /** Pure reducer; transport persists the result atomically with a revision compare-and-swap. */
 export function applyControlCommand(input: ControlState, inputCommand: ControlCommand): ControlState {
   const state = ControlStateSchema.parse(input);
@@ -198,6 +210,12 @@ export function applyControlCommand(input: ControlState, inputCommand: ControlCo
   } else {
     next = { ...command.state, appliedCommandIds: state.appliedCommandIds };
   }
+  const asOf = new Intl.DateTimeFormat('sv-SE', { timeZone: next.settings.timezone }).format(new Date(command.createdAt));
+  const covered = fullyCoveredBills(next, asOf), previouslyCovered = fullyCoveredBills(state, asOf);
+  next.bills = next.bills.map(bill => {
+    if (bill.cancelled) return bill;
+    return covered.has(bill.id) ? { ...bill, paymentStatusKnown: true } : previouslyCovered.has(bill.id) ? { ...bill, paymentStatusKnown: false } : bill;
+  });
   return ControlStateSchema.parse({ ...next, revision: state.revision + 1, updatedAt: command.createdAt,
     appliedCommandIds: [...state.appliedCommandIds, command.id] });
 }
