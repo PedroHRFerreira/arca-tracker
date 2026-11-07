@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Text, View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { getPlanTargets, type ControlState, type ControlSummary } from '@arca/domain';
+import { getPlanTargets, localDateString, type ControlState, type ControlSummary } from '@arca/domain';
 import { useApp } from '@/providers/AppProvider';
-import { investmentBudget } from '@/financeGuidance';
+import { financeNextStep, investmentBudget } from '@/financeGuidance';
 import { AssetOptions } from '@/components/AssetOptions';
 import { Button, Card } from '@/components/ui';
 import { controlMoney } from '@/components/ControlUI';
@@ -16,8 +16,19 @@ export function FinanceInvestmentGuide({ state, summary, onReview, conflict = fa
   if (conflict) return <Card style={styles.card}><Text style={styles.title}>Confirme a versão dos seus dados</Text><Text style={styles.copy}>Há diferenças entre este aparelho e a base online. Resolva essa revisão antes de usar um valor como referência para investir.</Text><Button title="Comparar versões dos meus dados" onPress={() => router.push('/finance-settings')} /></Card>;
   const profile = activePlan ? { ...activePlan, essentialExpenses: (summary.essentialExpensesCents / 100).toFixed(2), reserveMonths: state.settings.reserveMonths } : null;
   const budget = investmentBudget(summary, profile);
+  if (budget.stage === 'REVIEW') {
+    const nextStep = financeNextStep(state, summary, localDateString());
+    return <Card style={styles.card}>
+      <Text style={styles.title}>{state.settings.reviewed ? 'Sua confirmação está salva' : 'Confira o que falta no orçamento'}</Text>
+      <Text style={styles.copy}>{state.settings.reviewed
+        ? 'Você já confirmou o planejamento geral. Os itens abaixo têm conferência própria e ainda impedem calcular quanto pode aportar.'
+        : 'Estas são as informações que ainda faltam para calcular quanto você pode aportar.'}</Text>
+      <View style={{ gap: 12 }}>{summary.gaps.map(gap => <Text key={gap} style={styles.copy}>• {gap}</Text>)}</View>
+      <View style={styles.reviewStep}><Text style={styles.stepTitle}>Próximo passo: {nextStep.title}</Text><Text style={styles.copy}>{nextStep.detail}</Text></View>
+      <Button title={nextStep.label} onPress={onReview} />
+    </Card>;
+  }
   const blocked = {
-    REVIEW: { title: 'Primeiro, confirme o que sobra', detail: 'Há informações do orçamento por conferir. Escolher um ativo agora não resolve essa dúvida; vamos começar pelos saldos e compromissos.', label: 'Conferir meu orçamento', onPress: onReview },
     WAIT: { title: 'Seu aporte pode esperar', detail: 'Hoje não há capacidade confirmada para um novo investimento. Mantenha os pagamentos em dia e reveja o orçamento antes de separar um valor.', label: 'Revisar meu orçamento', onPress: onReview },
     PROFILE: { title: 'Vamos descobrir o que faz sentido para você', detail: 'O prazo do objetivo e sua reação a perdas ajudam a escolher a distribuição. Responda o planejamento para receber opções com esses critérios.', label: 'Responder meu planejamento', onPress: () => router.push('/onboarding') },
     DEBT: { title: 'Organize primeiro os juros altos', detail: 'Seu plano informa dívidas caras. Confira essa etapa antes de fazer um novo aporte. Parcelas em dia, por si só, não são dívidas caras.', label: 'Revisar etapa do meu plano', onPress: () => router.push('/(tabs)/plan') },
@@ -46,5 +57,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 21, lineHeight: 28, fontWeight: '800', color: colors.ink },
   amount: { fontSize: 29, fontWeight: '800', color: colors.primary },
   budgetLink: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  reviewStep: { gap: 6, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
+  stepTitle: { fontSize: 15, lineHeight: 22, fontWeight: '700', color: colors.ink },
   copy: { fontSize: 14, lineHeight: 22, color: colors.muted },
 });

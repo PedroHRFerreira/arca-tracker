@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import initSqlJs, { type Database, type SqlValue } from 'sql.js';
-import { applyControlCommand, createControlState, type ControlCommand } from '@arca/domain';
+import { applyControlCommand, calculateControlSummary, createControlState, type ControlCommand } from '@arca/domain';
 
 const shared = vi.hoisted(() => ({ adapter: null as unknown }));
 vi.mock('expo-sqlite', () => ({ openDatabaseAsync: async () => shared.adapter }));
@@ -44,6 +44,25 @@ function fakeServer() {
   return { get state() { return state; }, mutate(command: ControlCommand) { state = applyControlCommand(state, command); }, interrupt() { interruptAfterCommit = true; } };
 }
 describe('control local persistence and synchronization', () => {
+  it('preserves general confirmation through a lost sync response without confirming individual forecasts', async () => {
+    const server = fakeServer();
+    await control.dispatchControlCommand({ type: 'UPSERT', collection: 'forecasts', entity: { id: 'forecast', month: '2028-02', totalCents: 10000, compositionReviewed: false } });
+    await api.syncControl();
+    await control.dispatchControlCommand({ type: 'SET_SETTINGS', settings: { reviewed: true, cashConfirmed: true, obligationsReviewed: true } });
+    server.interrupt();
+    await expect(api.syncControl()).rejects.toThrow('Sem conexão');
+    expect((await control.loadControlBundle()).state.settings).toMatchObject({ reviewed: true, cashConfirmed: true, obligationsReviewed: true });
+    await api.syncControl();
+    const bundle = await control.loadControlBundle();
+    expect(bundle.pending).toEqual([]);
+    expect(bundle.state.settings).toMatchObject({ reviewed: true, cashConfirmed: true, obligationsReviewed: true });
+    expect(server.state.settings).toMatchObject({ reviewed: true, cashConfirmed: true, obligationsReviewed: true });
+    expect(bundle.state.forecasts[0]?.compositionReviewed).toBe(false);
+    const summary = calculateControlSummary(bundle.state, '2028-02-06');
+    expect(summary.gaps).not.toContain('Revise seu cadastro financeiro inicial.');
+    expect(summary.gaps).toContain('Confira a composição das faturas previstas.');
+    expect(summary.investmentCapacityCents).toBeNull();
+  });
   it('refreshes subscribers only after a complete restore and keeps online review required', async () => {
     await control.dispatchControlCommand(account('backup'));
     const backup = await database.exportDatabaseJson();
