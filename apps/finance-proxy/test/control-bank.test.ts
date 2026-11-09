@@ -58,6 +58,32 @@ describe('private control bank adapter', () => {
     expect(result.accounts).toHaveLength(1); expect(result.cards).toHaveLength(1); expect(result.bills).toHaveLength(1);
     expect(result.transactions).toEqual([]); expect(result.warnings.join(' ')).toContain('outra moeda');
   });
+  it('uses the bank-supplied BRL amount for an unbilled pending foreign purchase without losing account updates', async () => {
+    const result = await loadControlBankImport(credentials, provider({ movements: { 'credit-account': [movement('credit-account', {
+      amount: 6.75, currencyCode: 'USD', amountInAccountCurrency: 39.12, status: 'PENDING', operationType: 'PAGAMENTO',
+    })] } }), { now });
+    expect(result.connections[0]).toMatchObject({ status: 'UPDATED', accountsComplete: true, transactionsComplete: true, billsComplete: true });
+    expect(result.accounts[0]?.balanceCents).toBe(4071);
+    expect(result.bills).toHaveLength(1);
+    expect(result.transactions[0]).toMatchObject({ amountCents: 3912, status: 'PENDING', kind: 'CARD_PURCHASE', billId: null, affectsBalance: false });
+    expect(result.warnings.join(' ')).toContain('valor em reais informado pelo banco');
+  });
+  it('keeps an unconverted pending foreign charge incomplete and preserves the last data', async () => {
+    const previous = await loadControlBankImport(credentials, provider(), { now });
+    const result = await loadControlBankImport(credentials, provider({ movements: { 'credit-account': [movement('credit-account', {
+      currencyCode: 'USD', status: 'PENDING', amountInAccountCurrency: null,
+    })] } }), { now, previous });
+    expect(result.connections[0]?.status).toBe('ERROR');
+    expect(result.accounts).toEqual(previous.accounts);
+    expect(result.transactions).toEqual(previous.transactions);
+  });
+  it('distinguishes a positive generic card purchase from an actual negative card payment', async () => {
+    const result = await loadControlBankImport(credentials, provider({ movements: { 'credit-account': [
+      movement('credit-account', { id: 'positive', operationType: 'PAGAMENTO' }),
+      movement('credit-account', { id: 'negative', operationType: 'PAGAMENTO', amount: -12.31, type: 'CREDIT' }),
+    ] } }), { now });
+    expect(result.transactions.map(row => row.kind)).toEqual(['CARD_PURCHASE', 'CARD_PAYMENT']);
+  });
   it('blocks a foreign purchase when its actual BRL bill is unavailable', async () => {
     const result = await loadControlBankImport(credentials, provider({ bills: [], movements: { 'credit-account': [movement('credit-account', { currencyCode: 'USD', creditCardMetadata: { billId: 'unknown-bill' } })] } }), { now });
     expect(result.connections[0]?.status).toBe('ERROR'); expect(result.accounts).toEqual([]);
@@ -131,6 +157,11 @@ describe('private control bank adapter', () => {
     const result = await loadControlBankImport(credentials, provider({ accounts: [bank], movements: { 'bank-account': [movement('bank-account', { status: 'PENDING', date: '2026-12-10T00:00:00Z' })] } }), { now });
     expect(result.transactions[0]).toMatchObject({ status: 'PENDING', date: '2026-12-10', affectsBalance: false });
   });
+  it('converts a posted instant to the Brazilian calendar without shifting invoice due dates', async () => {
+    const result = await loadControlBankImport(credentials, provider({ movements: { 'bank-account': [movement('bank-account', { date: '2026-11-03T01:15:00Z' })] } }), { now });
+    expect(result.transactions[0]?.date).toBe('2026-11-02');
+    expect(result.bills[0]?.dueDate).toBe('2026-11-10');
+  });
   it('rejects incomplete or foreign money instead of silently omitting commitments', async () => {
     const result = await loadControlBankImport(credentials, provider({ movements: { 'bank-account': [movement('bank-account', { currencyCode: 'USD' })] } }), { now });
     expect(result.connections[0]?.status).toBe('ERROR'); expect(result.accounts).toEqual([]);
@@ -156,7 +187,7 @@ describe('bank import review and reconciliation', () => {
     const bankImport = await loadControlBankImport(credentials, provider(), { now });
     const preview = applyBankControlImport(initial, bankImport);
     expect(preview.pendingLinks).toHaveLength(2); expect(preview.state.accounts).toHaveLength(1); expect(preview.state.cards).toHaveLength(1);
-    expect(preview.state.settings).toMatchObject({ reviewed: false, cashConfirmed: false, obligationsReviewed: false });
+    expect(preview.state.settings).toMatchObject({ reviewed: true, cashConfirmed: false, obligationsReviewed: false });
     const resolved = applyBankControlImport(initial, bankImport, { accountLinks: { [bankImport.accounts[0]!.id]: 'manual-bank' }, cardLinks: { [bankImport.cards[0]!.id]: 'manual-card' } });
     expect(resolved.pendingLinks).toEqual([]); expect(resolved.state.accounts[0]?.id).toBe('manual-bank'); expect(resolved.state.cards[0]?.id).toBe('manual-card');
     expect(resolved.state.accounts).toHaveLength(1); expect(resolved.state.cards).toHaveLength(1);
@@ -202,7 +233,7 @@ describe('bank import review and reconciliation', () => {
     previous.settings.reviewed = previous.settings.cashConfirmed = previous.settings.obligationsReviewed = true;
     const failed = applyKnownBankControlImport(previous, { ...bankImport, connections: bankImport.connections.map(value => ({ ...value, status: 'ERROR' })) });
     expect(failed.state.balanceObservations).toEqual(previous.balanceObservations); expect(failed.state.bills).toEqual(previous.bills);
-    expect(failed.state.settings).toMatchObject({ reviewed: false, cashConfirmed: false, obligationsReviewed: false });
+    expect(failed.state.settings).toMatchObject({ reviewed: true, cashConfirmed: false, obligationsReviewed: false });
     const missing = applyBankControlImport(previous, { ...bankImport, accounts: bankImport.accounts.map(value => ({ ...value, balanceCents: null })) });
     expect(missing.state.settings.cashConfirmed).toBe(false);
   });

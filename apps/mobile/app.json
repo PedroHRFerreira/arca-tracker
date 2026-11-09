@@ -3,7 +3,7 @@
     "name": "ARCA Tracker",
     "slug": "arca-tracker",
     "owner": "pedrohrferreira",
-    "version": "0.5.2",
+    "version": "0.5.3",
     "orientation": "portrait",
     "scheme": "arcatracker",
     "userInterfaceStyle": "light",

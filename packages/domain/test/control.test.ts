@@ -114,6 +114,18 @@ describe('cash, commitments and reserves', () => {
     expect(result.bankBalanceCents).toBe(240000);
     expect(result.investmentCapacityCents).toBe(180000);
   });
+  it('covers old installments with a forecast while keeping new recurring card costs separate', () => {
+    const initial = state({ cards: [{ id: 'c', name: 'Cartão' }],
+      forecasts: [{ id: 'f', month: '2028-02', totalCents: 10000, compositionReviewed: true, includesRecurring: false }],
+      purchases: [{ id: 'p', cardId: 'c', name: 'Parcela antiga', purchaseDate: '2028-01-01', dueDate: '2028-02-04', amountCents: 10000, verification: 'CONFIRMED' }],
+      expenses: [{ id: 'e', name: 'Nova assinatura', paymentMethod: 'CARD', dueDate: '2028-02-10', amountCents: 2000, verification: 'CONFIRMED' }],
+    });
+    const result = calculateControlSummary(initial, '2028-02-01');
+    expect(result.obligations.map(row => row.amountCents).reduce((sum, amount) => sum + amount, 0)).toBe(12000);
+    expect(result.obligations.some(row => row.kind === 'PURCHASE')).toBe(false);
+    expect(result.monthly).toMatchObject({ billsCents: 10000, expenseCents: 2000 });
+    expect(result.investmentCapacityCents).toBeNull(); // Recurring card cost still needs its own invoice review.
+  });
   it('does not replay imported history before the balance observation or invent income from transfers', () => {
     const initial = state({ incomes: [
       { id: 'old', name: 'Antigo', amountCents: 200000, dueDate: '2028-01-30', settledDate: '2028-01-30', status: 'SETTLED', accountId: 'bank' },

@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { PersonalItemsSchema, ProviderError } from './provider';
 import type { z } from 'zod';
-import { ControlStateSchema, type ControlState } from '@arca/domain';
+import { controlObservationDate, ControlStateSchema, type ControlState } from '@arca/domain';
 
 type Row = Record<string, unknown>;
 type PersonalItem = z.infer<typeof PersonalItemsSchema>[number];
@@ -148,6 +148,7 @@ export async function loadControlBankImport(
     result.connections.push(connection);
     const staged: Pick<BankControlImport, 'accounts' | 'cards' | 'transactions' | 'bills'> = { accounts: [], cards: [], transactions: [], bills: [] };
     const foreignCardBills = new Set<string>();
+    let hasBankConversion = false;
     try {
       const item = await call(`/items/${encodeURIComponent(configured.id)}`, key);
       if (item.id !== configured.id || row(item.connector).name !== 'MeuPluggy') throw new ProviderError('PROVIDER_WRONG_CONNECTOR');
@@ -170,19 +171,32 @@ export async function loadControlBankImport(
           staged.cards.push({ id: accountId, externalId, connectionId: configured.id, institution: configured.institution, name: `${label(configured)} — Cartão`, limitCents, availableLimitCents, usedLimitCents, reportedBalanceCents: balanceCents, dueDate: date(credit.balanceDueDate), closingDate: date(credit.balanceCloseDate) });
         }
         for (const movement of await transactions(externalId)) {
-          const externalMovementId = text(movement.id), providerId = text(movement.providerId), movementDate = date(movement.date), amountCents = cents(movement.amount, true);
+          const externalMovementId = text(movement.id), providerId = text(movement.providerId);
+          const rawDate = date(movement.date), postedAt = movement.status === 'POSTED' && typeof movement.date === 'string' && movement.date.includes('T') ? timestamp(movement.date) : null;
+          const movementDate = postedAt ? controlObservationDate(postedAt, 'America/Sao_Paulo') : rawDate;
+          let amountCents = cents(movement.amount, true);
           if (!externalMovementId || movement.accountId !== externalId || !movementDate || amountCents === null || !['PENDING', 'POSTED'].includes(String(movement.status)) || !['CREDIT', 'DEBIT'].includes(String(movement.type))) throw new ProviderError('PROVIDER_RESPONSE');
           const operationType = text(movement.operationType, 100), metadata = row(movement.creditCardMetadata);
           if (movement.currencyCode !== 'BRL') {
             const foreignBill = text(metadata.billId);
-            if (kind !== 'CREDIT' || movement.status !== 'POSTED' || !foreignBill || !/^[A-Z]{3}$/.test(String(movement.currencyCode))) throw new ProviderError('PROVIDER_RESPONSE');
-            // The BRL invoice remains authoritative. Never invent an exchange rate or replay a foreign amount as BRL.
-            foreignCardBills.add(id(configured.id, `bill:${externalId}`, foreignBill));
-            continue;
+            if (kind !== 'CREDIT' || !/^[A-Z]{3}$/.test(String(movement.currencyCode))) throw new ProviderError('PROVIDER_RESPONSE');
+            const converted = cents(movement.amountInAccountCurrency, true);
+            if (converted !== null && (amountCents < 0) === (converted < 0) && (amountCents === 0 || converted !== 0)) {
+              // Account currency is validated as BRL above; this is the bank's amount, not an estimated exchange rate.
+              amountCents = converted;
+              hasBankConversion = true;
+            } else {
+              if (movement.status !== 'POSTED' || !foreignBill) throw new ProviderError('PROVIDER_RESPONSE');
+              // A known BRL invoice can cover the foreign item when no usable conversion was supplied.
+              foreignCardBills.add(id(configured.id, `bill:${externalId}`, foreignBill));
+              continue;
+            }
           }
           const payment = row(movement.paymentData), payer = text(row(row(payment.payer).documentNumber).value), receiver = text(row(row(payment.receiver).documentNumber).value);
           const ownTransfer = payer !== null && receiver !== null && payer.replace(/\D/g, '') !== '' && payer.replace(/\D/g, '') === receiver.replace(/\D/g, '');
-          const cardPayment = ['PAGAMENTO_FATURA', ...(kind === 'CREDIT' ? ['PAGAMENTO'] : [])].includes(operationType ?? '');
+          const cardPayment = kind === 'CREDIT'
+            ? amountCents < 0 && movement.type === 'CREDIT' && ['PAGAMENTO', 'PAGAMENTO_FATURA'].includes(operationType ?? '')
+            : operationType === 'PAGAMENTO_FATURA';
           const transactionKind: BankControlTransaction['kind'] = cardPayment ? 'CARD_PAYMENT' : kind === 'CREDIT' ? amountCents >= 0 ? 'CARD_PURCHASE' : operationType === 'ESTORNO' ? 'CARD_REFUND' : 'CARD_CREDIT' : ownTransfer ? 'OWN_TRANSFER' : ['RESGATE_APLIC_FINANCEIRA', 'APLICACAO_FINANCEIRA'].includes(operationType ?? '') ? 'INVESTMENT_TRANSFER' : movement.type === 'CREDIT' ? 'CASH_IN' : 'CASH_OUT';
           const rawBillId = text(metadata.billId);
           staged.transactions.push({ id: id(configured.id, `transaction:${externalId}`, providerId ?? externalMovementId), externalId: externalMovementId, connectionId: configured.id, accountId, externalAccountId: externalId, providerId, accountKind: kind, description: text(movement.description, 240) ?? 'Movimentação bancária', amountCents: Math.abs(amountCents), date: movementDate, status: movement.status as 'PENDING' | 'POSTED', direction: movement.type as 'CREDIT' | 'DEBIT', kind: transactionKind, operationType, billId: rawBillId ? id(configured.id, `bill:${externalId}`, rawBillId) : null, installmentNumber: integer(metadata.installmentNumber), totalInstallments: integer(metadata.totalInstallments), totalPurchaseCents: cents(metadata.totalAmount), affectsBalance: false });
@@ -206,6 +220,7 @@ export async function loadControlBankImport(
       }
       if ([...foreignCardBills].some(billId => !staged.bills.some(bill => bill.id === billId))) throw new ProviderError('PROVIDER_RESPONSE');
       if (foreignCardBills.size) result.warnings.push(`${label(configured)}: há compras em outra moeda já incluídas em faturas em reais. Os itens estrangeiros não foram convertidos nem importados; confira a composição no banco.`);
+      if (hasBankConversion) result.warnings.push(`${label(configured)}: compras em outra moeda usam o valor em reais informado pelo banco. Lançamentos pendentes ainda podem mudar até o fechamento da fatura.`);
       connection.accountsComplete = connection.transactionsComplete = connection.billsComplete = true;
       for (const collection of ['accounts', 'cards', 'transactions', 'bills'] as const) (result[collection] as BankEntity[]).push(...unique<BankEntity>(staged[collection]));
       if (!staged.cards.length) result.warnings.push(`${label(configured)}: nenhum cartão foi disponibilizado pela conexão. Cadastre as faturas manualmente.`);
@@ -334,9 +349,9 @@ export function applyBankControlImport(input: ControlState, bank: BankControlImp
     if (purchase) Object.assign(purchase, values);
     else state.purchases.push({ id: movement.id, cancelled: false, categoryId: null, groupId: null, ...values });
   }
-  if (incompleteCash) { state.settings.cashConfirmed = false; state.settings.reviewed = false; }
+  if (incompleteCash) state.settings.cashConfirmed = false;
   else state.settings.cashConfirmed = state.accounts.some(account => !account.cancelled) && state.accounts.filter(account => !account.cancelled).every(account => state.balanceObservations.some(balance => balance.accountId === account.id && balance.confirmed && !balance.cancelled));
-  if (incompleteObligations || pendingLinks.length) { state.settings.obligationsReviewed = false; state.settings.reviewed = false; }
+  if (incompleteObligations || pendingLinks.length) state.settings.obligationsReviewed = false;
   if (pendingTransactions.length) warnings.push('Movimentações aguardam conciliação; receitas e pagamentos não foram recriados a partir do histórico bancário.');
   return { state: ControlStateSchema.parse(state), pendingTransactions, pendingLinks, warnings: [...new Set(warnings)] };
 }

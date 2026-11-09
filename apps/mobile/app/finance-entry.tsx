@@ -3,13 +3,14 @@ import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
-import { ControlDateSchema, controlCollectionSchemas, controlMovementsForMonth, localDateString, parseMoneyInput, type ControlCollection, type ControlState } from '@arca/domain';
+import { ControlDateSchema, controlCollectionSchemas, controlMovementsForMonth, localDateString, parseMoneyInput, type ControlCollection, type ControlExpense, type ControlState } from '@arca/domain';
 import { useControl } from '@/providers/useControl';
 import { Button, Card, ScreenHeader } from '@/components/ui';
 import { ControlChoices, ControlField, ControlToggle, controlDateLabel, controlMoney, controlStyles as s } from '@/components/ControlUI';
 import { colors } from '@/theme';
 import { financeErrorMessage } from '@/financeValidation';
 import { localObservationMinute, observationTimestamp } from '@/financeObservation';
+import { ExpensePaymentForm } from '@/components/ExpensePaymentForm';
 
 const kinds: Record<string, ControlCollection> = { account: 'accounts', balance: 'balanceObservations', income: 'incomes', expense: 'expenses', card: 'cards', bill: 'bills', purchase: 'purchases', payment: 'payments', forecast: 'forecasts', category: 'categories' };
 const labels: Record<ControlCollection, string> = { accounts: 'Conta bancária', balanceObservations: 'Saldo da conta', incomes: 'Receita', expenses: 'Despesa', cards: 'Cartão de crédito', bills: 'Fatura', purchases: 'Compra ou parcela', payments: 'Pagamento de fatura', forecasts: 'Previsão das faturas', categories: 'Categoria e orçamento' };
@@ -26,7 +27,7 @@ function findEntity(state: ControlState, collection: ControlCollection, id?: str
 }
 
 export default function FinanceEntry() {
-  const params = useLocalSearchParams<{ kind?: string; id?: string; accountId?: string; billId?: string; cardId?: string; month?: string }>();
+  const params = useLocalSearchParams<{ kind?: string; id?: string; accountId?: string; billId?: string; cardId?: string; month?: string; action?: string }>();
   const collection = kinds[params.kind ?? ''] ?? (params.kind && params.kind in controlCollectionSchemas ? params.kind as ControlCollection : 'expenses');
   const { state, ready, busy, save, conflict } = useControl();
   const [form, setForm] = useState<Form>({});
@@ -142,6 +143,12 @@ export default function FinanceEntry() {
   const categories = [{ value: '', label: 'Sem categoria' }, ...state.categories.filter(row => !row.cancelled).map(row => ({ value: row.id, label: row.name }))];
   const movement = collection === 'incomes' || collection === 'expenses';
   const amountLabel = collection === 'balanceObservations' ? 'Saldo da conta (R$)' : collection === 'forecasts' ? 'Total previsto dos cartões (R$)' : collection === 'bills' ? 'Total da fatura (R$)' : collection === 'purchases' ? 'Valor desta parcela (R$)' : 'Valor (R$)';
+  const paymentExpense = ready && collection === 'expenses' && params.action === 'pay' ? findEntity(state, 'expenses', params.id, params.month) as ControlExpense | undefined : undefined;
+  if (paymentExpense) return <ExpensePaymentForm key={paymentExpense.id} state={state} expense={paymentExpense} today={today} busy={busy} onSave={async paid => {
+    assertUnchanged();
+    await save({ type: 'UPSERT', collection: 'expenses', entity: paid });
+    router.dismissTo({ pathname: '/(tabs)/finances', params: { view: 'expenses', month: paid.dueDate.slice(0, 7) } });
+  }} />;
   return <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}><KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
     <ScrollView contentContainerStyle={[s.content, { paddingBottom: 70 }]} keyboardShouldPersistTaps="handled">
       <ScreenHeader back title={`${params.id ? 'Revisar' : 'Adicionar'} ${labels[collection].toLowerCase()}`} subtitle="Cada registro tem seu lugar no seu orçamento" />

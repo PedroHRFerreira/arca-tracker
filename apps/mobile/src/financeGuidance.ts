@@ -1,4 +1,4 @@
-import { evaluatePlan, getPlanTargets, type ControlState, type ControlSummary, type PlanningProfile } from '@arca/domain';
+import { controlObservationDate, evaluatePlan, getPlanTargets, type ControlState, type ControlSummary, type PlanningProfile } from '@arca/domain';
 
 export type FinanceAction = { kind: 'ACCOUNT' | 'BALANCE' | 'BILL' | 'FORECAST' | 'REVIEW' | 'INVEST' | 'BUDGET'; id?: string; accountId?: string; month?: string };
 export type FinanceGuidance = { title: string; detail: string; label: string; action: FinanceAction };
@@ -8,7 +8,7 @@ export function financeNextStep(state: ControlState, summary: ControlSummary, to
   const accounts = state.accounts.filter(row => !row.cancelled);
   if (!accounts.length) return { title: 'Comece pela sua conta', detail: 'Informe a conta e o saldo que aparece no banco. Isso é diferente do limite do cartão.', label: 'Adicionar minha conta', action: { kind: 'ACCOUNT' } };
   const account = accounts.find(row => {
-    const latest = state.balanceObservations.filter(item => !item.cancelled && item.accountId === row.id && item.observedAt.slice(0, 10) <= today).sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0];
+    const latest = state.balanceObservations.filter(item => !item.cancelled && item.accountId === row.id && controlObservationDate(item.observedAt, state.settings.timezone) <= today).sort((a, b) => b.observedAt.localeCompare(a.observedAt))[0];
     return !latest?.confirmed || Date.parse(`${today}T00:00:00Z`) - Date.parse(latest.observedAt) > 2 * 86400000;
   });
   if (account) return { title: 'Confira o saldo de hoje', detail: `Atualize o saldo de ${account.name}. Sem essa confirmação, ainda não dá para dizer quanto você pode separar.`, label: `Conferir saldo · ${account.name}`, action: { kind: 'BALANCE', accountId: account.id } };

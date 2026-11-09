@@ -4,6 +4,9 @@ const day = (date: Date) => date.toISOString().slice(0, 10);
 const date = (value: string) => new Date(`${ControlDateSchema.parse(value)}T12:00:00Z`);
 const monthOf = (value: string) => value.slice(0, 7);
 const active = <T extends { cancelled: boolean }>(rows: T[]) => rows.filter(row => !row.cancelled);
+export function controlObservationDate(value: string, timezone: string): string {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: timezone }).format(new Date(value));
+}
 function addCents(...values: number[]) {
   const total = values.reduce((sum, value) => sum + value, 0);
   if (!Number.isSafeInteger(total)) throw new Error('Total fora do limite de precisão.');
@@ -83,7 +86,7 @@ export function controlMonthObligations(state: ControlState, month: string, toda
     if (residual) result.push({ id: forecast.id, name: 'Faturas previstas — composição a conferir', dueDate: `${month}-01`,
       amountCents: residual, estimated: true, kind: 'FORECAST' });
   }
-  const covered = (cardId: string) => forecasts.some(row => row.includesRecurring && (row.cardIds.length === 0 || row.cardIds.includes(cardId)));
+  const covered = (cardId: string) => forecasts.some(row => row.cardIds.length === 0 || row.cardIds.includes(cardId));
   for (const purchase of active(state.purchases).filter(row => monthOf(row.dueDate) === month)) {
     if ((purchase.billId && bills.some(row => row.id === purchase.billId)) || covered(purchase.cardId)) continue;
     result.push({ id: purchase.id, name: purchase.name, dueDate: purchase.dueDate, amountCents: purchase.amountCents,
@@ -149,7 +152,7 @@ export function calculateControlSummary(input: ControlState, today: string): Con
     gaps.add('Atualize o resumo da carteira para conferir a reserva.');
   const observations = new Map<string, typeof state.balanceObservations[number]>();
   for (const row of active(state.balanceObservations)) {
-    if (row.observedAt.slice(0, 10) > today) continue;
+    if (controlObservationDate(row.observedAt, state.settings.timezone) > today) continue;
     if (!observations.has(row.accountId) || row.observedAt > observations.get(row.accountId)!.observedAt) observations.set(row.accountId, row);
   }
   const accounts = active(state.accounts);
@@ -168,7 +171,7 @@ export function calculateControlSummary(input: ControlState, today: string): Con
     const anchor = accountId ? observations.get(accountId) : undefined;
     if (!anchor) { gaps.add('Vincule os recebimentos e pagamentos a uma conta com saldo confirmado.'); return false; }
     if (settledAt) return settledAt > anchor.observedAt;
-    const anchorDate = anchor.observedAt.slice(0, 10);
+    const anchorDate = controlObservationDate(anchor.observedAt, state.settings.timezone);
     if (settledDate === anchorDate) gaps.add('Confira lançamentos e saldo registrados no mesmo dia.');
     return settledDate > anchorDate;
   };

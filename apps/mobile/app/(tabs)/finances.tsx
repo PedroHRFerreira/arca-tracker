@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Platform, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { controlAddMonths, controlBillPaidCents, controlMovementsForMonth, localDateString, projectControlMonths } from '@arca/domain';
 import { Button, Card } from '@/components/ui';
@@ -17,11 +17,17 @@ type Section = 'overview' | 'incomes' | 'expenses' | 'cards' | 'installments' | 
 const sourceLabel: Record<string, string> = { MANUAL: 'Informado por você', BANK: 'Importado do banco', DISCORD: 'Registrado no Discord', IMPORT: 'Importado de arquivo' };
 
 export default function Finances() {
+  const params = useLocalSearchParams<{ view?: string; month?: string }>();
   const control = useControl();
   const { state, summary, ready, busy, error, conflict, pending, lastSyncAt } = control;
   const today = localDateString();
   const [section, setSection] = useState<Section>('overview');
   const [month, setMonth] = useState(today.slice(0, 7));
+  useEffect(() => {
+    if (params.view !== 'expenses') return;
+    setSection('expenses');
+    if (params.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(params.month)) setMonth(params.month);
+  }, [params.view, params.month]);
   const [showGaps, setShowGaps] = useState(false);
   const [showData, setShowData] = useState(false);
   const scroll = useRef<ScrollView>(null);
@@ -118,9 +124,11 @@ export default function Finances() {
       {section === 'investments' && <FinanceInvestmentGuide state={state} summary={summary} conflict={!!conflict} onReview={() => takeAction(nextStep.action)} />}
       {(section === 'incomes' || section === 'expenses') && <>
         <ControlSection title={section === 'incomes' ? 'Receitas do mês' : 'Despesas do mês'} subtitle={section === 'incomes' ? 'Previsto não significa recebido. Confirme cada depósito.' : 'Despesas no cartão entram na fatura, sem outra saída de caixa.'} action={{ label: '+ Adicionar', onPress: () => edit(section === 'incomes' ? 'income' : 'expense') }}>
-          {movements[section].length ? <Card style={styles.card}>{movements[section].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).map(row => <ControlRow key={row.id} title={row.name} amount={controlMoney(row.amountCents)}
-            detail={`${controlDateLabel(row.dueDate)} · ${row.status === 'SETTLED' ? section === 'incomes' ? 'Recebida' : 'Registrada como paga' : 'Prevista'}${row.recurrence === 'MONTHLY' || row.parentId ? ' · Mensal' : ''}`}
-            hint={`${sourceLabel[row.source]}${section === 'expenses' && 'paymentMethod' in row && row.paymentMethod === 'CARD' ? ' · Incluída no cartão' : ''}${row.verification === 'ESTIMATED' ? ' · Valor a conferir' : ''}`} onPress={() => edit(section === 'incomes' ? 'income' : 'expense', row.id)} />)}</Card> : <ControlEmpty title={section === 'incomes' ? 'Nenhuma receita registrada neste mês' : 'Nenhuma despesa registrada neste mês'} detail={section === 'incomes' ? 'O salário configurado aparece na projeção. Registre a receita e confirme apenas quando receber.' : 'Inclua despesas fixas e variáveis. Use repetição mensal para compromissos recorrentes.'} />}
+          {movements[section].length ? <Card style={styles.card}>{movements[section].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).map(row => <View key={row.id}><ControlRow title={row.name.replace(/\s*[—–-]\s*conferir vencimento$/i, '')} amount={controlMoney(row.amountCents)}
+            detail={`${row.status === 'SETTLED' && row.settledDate ? `${section === 'incomes' ? 'Recebida' : 'Paga'} em ${controlDateLabel(row.settledDate)}` : `${/conferir vencimento$/i.test(row.name) ? 'Vencimento a conferir' : controlDateLabel(row.dueDate)} · ${row.status === 'SETTLED' ? section === 'incomes' ? 'Recebida' : 'Registrada como paga' : 'Prevista'}`}${row.recurrence === 'MONTHLY' || row.parentId ? ' · Mensal' : ''}`}
+            hint={`${sourceLabel[row.source]}${section === 'expenses' && 'paymentMethod' in row && row.paymentMethod === 'CARD' ? ' · Incluída no cartão' : ''}${row.verification === 'ESTIMATED' ? ' · Valor a conferir' : ''}`} onPress={() => edit(section === 'incomes' ? 'income' : 'expense', row.id)} />
+            {section === 'expenses' && row.status === 'EXPECTED' && 'paymentMethod' in row && row.paymentMethod === 'CASH' && row.kind === 'EXPENSE' && <Button title="Já paguei" variant="secondary" onPress={() => edit('expense', row.id, { action: 'pay' })} />}
+          </View>)}</Card> : <ControlEmpty title={section === 'incomes' ? 'Nenhuma receita registrada neste mês' : 'Nenhuma despesa registrada neste mês'} detail={section === 'incomes' ? 'O salário configurado aparece na projeção. Registre a receita e confirme apenas quando receber.' : 'Inclua despesas fixas e variáveis. Use repetição mensal para compromissos recorrentes.'} />}
         </ControlSection>
         {section === 'expenses' && <ControlSection title="Categorias e orçamento" action={{ label: '+ Categoria', onPress: () => edit('category') }}>
           {state.categories.some(row => !row.cancelled) ? <Card style={styles.card}>{state.categories.filter(row => !row.cancelled).map(category => {
