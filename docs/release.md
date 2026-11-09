@@ -6,7 +6,7 @@ O identificador Android é `com.pedro.arcatracker`. Mantenha o identificador e o
 
 ## APK para instalação no celular
 
-O perfil `preview` em `apps/mobile/eas.json` gera um APK de distribuição interna, sem cliente de desenvolvimento e sem depender do computador ou Expo Go. A versão desta entrega é 0.5.2. O EAS mantém e incrementa o código de versão Android remotamente.
+O perfil `preview` em `apps/mobile/eas.json` gera um APK de distribuição interna, sem cliente de desenvolvimento e sem depender do computador ou Expo Go. A versão desta entrega é 0.5.3. O EAS mantém e incrementa o código de versão Android remotamente.
 
 Na raiz do repositório:
 
@@ -67,3 +67,9 @@ APK Android 0.5.1 (código 8), do commit `5351d58`, com a assinatura já utiliza
 ## Entrega 0.5.2
 
 APK Android 0.5.2 (código 9), do commit `510ca1d`, publicado em 07/11/2026. [Baixar e instalar pelo Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/830bab4f-e64c-4a7c-a0be-a42dcf14ae37). A tela “Onde investir?” reconhece a confirmação geral salva e explica as pendências individuais com uma ação direta. Os 242 testes e a checagem de tipos passaram. O pacote baixado contém as novas mensagens e possui assinatura válida, idêntica à versão 0.5.1. Instale por cima da versão existente. Evidências e limites em [validação da conferência para investir](investment-review-validation.md).
+
+## Entrega 0.5.3
+
+APK Android 0.5.3 (código 11), do commit `1c25c46`, publicado em 09/11/2026. [Baixar e instalar pelo Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/c50ae129-70cb-41ee-8e70-00d18703ed69). Acrescenta a confirmação curta “Já paguei”, preserva a confirmação geral em falhas bancárias e corrige a atualização de compras com conversão em reais fornecida pelo banco. A projeção distingue despesas não incluídas nos totais das faturas, sem duplicar parcelas antigas.
+
+Compilação concluída, pacote baixado e assinatura Android v2 verificada com o mesmo certificado da versão 0.5.2. Identificador `com.pedro.arcatracker`, versão e presença do novo código conferidos no APK. Os 254 testes e a checagem de tipos passaram; o fluxo foi exercitado no navegador com dados fictícios. Instale por cima da versão existente e sincronize os dados financeiros. Limitações e evidências em [validação da calibração bancária](rods/validation/2026-11-09-bank-calibration.md).

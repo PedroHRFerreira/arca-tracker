@@ -27,9 +27,21 @@ Ambiente separado em `http://localhost:8086`, sem chave financeira nem dados pes
 - Viewports de 320 × 740 e 390 × 844: formulário legível, sem corte horizontal; campos e confirmação acessíveis por rolagem.
 - Encontrado e corrigido um filho de texto vazio na primeira versão do formulário. Após recarregar a versão corrigida, nenhum novo erro foi registrado durante os fluxos repetidos.
 - Evidência temporária inspecionada: `/tmp/arca-confirmar-pagamento.png` (somente dados fictícios; não versionada).
+- A projeção foi conferida em 320 × 740 com o rótulo “Despesas não incluídas nas faturas” e a explicação para gastos de cartão ainda fora dos totais. Evidência temporária: `/tmp/arca-projecao-despesas.png`.
 
 ## Limitações conhecidas
 
 O serviço só pode atualizar o que a conexão bancária disponibiliza, na data informada pela fonte. O cartão não disponibilizado por uma instituição continua manual. Classificação de uma despesa como cartão não comprova qual fatura a contém, sua data ou a quitação da fatura. Essas decisões continuam exigindo revisão e não são substituídas por correspondência aproximada de nomes.
 
-O teste visual foi realizado no navegador; não representa teste físico no celular. A entrega Android será registrada após a conclusão e verificação do APK no Expo.
+O teste visual foi realizado no navegador; não representa teste físico no celular.
+
+## Entrega Android verificada
+
+- [Build final no Expo](https://expo.dev/accounts/pedrohrferreira/projects/arca-tracker/builds/c50ae129-70cb-41ee-8e70-00d18703ed69), concluído em 09/11/2026 às 23:05:36 UTC.
+- Código do aplicativo: commit `1c25c460aa38192c29b70c2322b26b4e9a6d6dbf`, incluindo a implementação de `dd5a7f3`.
+- APK baixado, ZIP íntegro, identidade `com.pedro.arcatracker`, versão 0.5.3 e código Android 11 conferidos.
+- Assinatura v2 válida, com o mesmo certificado da instalação anterior.
+- As mensagens do fluxo curto e o rótulo corrigido da projeção estão presentes no pacote. As credenciais privadas configuradas não foram encontradas no código embarcado.
+- SHA-256 do APK: `f064d915754598085bc9b9d240d68df276977883ba52e6a3ecbcce0256b3f5c9`.
+
+A atualização deve ser instalada por cima do aplicativo existente. As alterações bancárias já estão no servidor e são recebidas ao sincronizar; a nova interface requer este APK. As pendências de dados não fornecidos pela conexão continuam visíveis e não são convertidas em uma capacidade de aporte confirmada.
